@@ -176,6 +176,8 @@ export function fbToRGBA(fb) {
   return out;
 }
 
+import { zlibDeflate } from './deflate.js';
+
 function crc32(buf) {
   let c, crc = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
@@ -184,36 +186,6 @@ function crc32(buf) {
     crc = (crc >>> 8) ^ c;
   }
   return (crc ^ 0xffffffff) >>> 0;
-}
-
-function adler32(buf) {
-  let a = 1, b = 0;
-  for (let i = 0; i < buf.length; i++) {
-    a = (a + buf[i]) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
-}
-
-function deflateStore(buf) {
-  const blocks = [];
-  const MAX = 65535;
-  for (let i = 0; i < buf.length; i += MAX) {
-    const chunk = buf.subarray(i, Math.min(i + MAX, buf.length));
-    const last = i + MAX >= buf.length ? 1 : 0;
-    const head = new Uint8Array(5);
-    head[0] = last;
-    head[1] = chunk.length & 255;
-    head[2] = (chunk.length >> 8) & 255;
-    head[3] = ~chunk.length & 255;
-    head[4] = (~chunk.length >> 8) & 255;
-    blocks.push(head, chunk);
-  }
-  const total = blocks.reduce((a, b) => a + b.length, 0);
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const b of blocks) { out.set(b, o); o += b.length; }
-  return out;
 }
 
 function pngChunk(type, data) {
@@ -227,38 +199,152 @@ function pngChunk(type, data) {
   return out;
 }
 
-/** fb -> Uint8Array PNG (RGBA, filtre 0) */
-export function fbToPNG(fb) {
-  const raw = new Uint8Array((fb.w * 4 + 1) * fb.h);
-  const rgbaData = fbToRGBA(fb);
-  for (let y = 0; y < fb.h; y++) {
-    raw[y * (fb.w * 4 + 1)] = 0;
-    raw.set(rgbaData.subarray(y * fb.w * 4, (y + 1) * fb.w * 4), y * (fb.w * 4 + 1) + 1);
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+}
+
+/** Applique le filtre PNG qui minimise la somme des écarts (heuristique standard). */
+function filterRows(raw, width, height, bpp) {
+  const stride = width * bpp;
+  const out = new Uint8Array((stride + 1) * height);
+  const cand = [new Uint8Array(stride), new Uint8Array(stride), new Uint8Array(stride), new Uint8Array(stride), new Uint8Array(stride)];
+  const score = new Array(5).fill(0);
+  for (let y = 0; y < height; y++) {
+    const cur = raw.subarray(y * stride, (y + 1) * stride);
+    const prev = y > 0 ? raw.subarray((y - 1) * stride, y * stride) : null;
+    score.fill(0);
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? cur[i - bpp] : 0;
+      const b = prev ? prev[i] : 0;
+      const c = prev && i >= bpp ? prev[i - bpp] : 0;
+      const v = cur[i];
+      cand[0][i] = v;
+      cand[1][i] = (v - a) & 255;
+      cand[2][i] = (v - b) & 255;
+      cand[3][i] = (v - ((a + b) >> 1)) & 255;
+      cand[4][i] = (v - paeth(a, b, c)) & 255;
+      for (let k = 0; k < 5; k++) score[k] += Math.abs(cand[k][i] < 128 ? cand[k][i] : cand[k][i] - 256);
+    }
+    let best = 0;
+    for (let k = 1; k < 5; k++) if (score[k] < score[best]) best = k;
+    out[y * (stride + 1)] = best;
+    out.set(cand[best], y * (stride + 1) + 1);
   }
+  return out;
+}
+
+function pngAssemble(width, height, bitDepth, colorType, raw, extraChunks = []) {
   const ihdr = new Uint8Array(13);
   const dv = new DataView(ihdr.buffer);
-  dv.setUint32(0, fb.w);
-  dv.setUint32(4, fb.h);
-  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  // flux zlib : en-tête 0x78 0x01 + données + Adler-32
-  const deflated = deflateStore(raw);
-  const adler = adler32(raw);
-  const z = new Uint8Array(deflated.length + 6);
-  z[0] = 0x78; z[1] = 0x01;
-  z.set(deflated, 2);
-  const zv = new DataView(z.buffer);
-  zv.setUint32(2 + deflated.length, adler);
-  const idat = z;
+  dv.setUint32(0, width);
+  dv.setUint32(4, height);
+  ihdr[8] = bitDepth;
+  ihdr[9] = colorType;
   const sig = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-  const parts = [
-    sig,
-    pngChunk('IHDR', ihdr),
-    pngChunk('IDAT', idat),
-    pngChunk('IEND', new Uint8Array(0)),
-  ];
+  const parts = [sig, pngChunk('IHDR', ihdr), ...extraChunks, pngChunk('IDAT', zlibDeflate(raw)), pngChunk('IEND', new Uint8Array(0))];
   const total = parts.reduce((a, b) => a + b.length, 0);
   const out = new Uint8Array(total);
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
+}
+
+/** fb -> PNG RGBA8 (filtres PNG + DEFLATE maison). */
+export function fbToPNG(fb) {
+  const rgba = fbToRGBA(fb);
+  const raw = filterRows(rgba, fb.w, fb.h, 4);
+  return pngAssemble(fb.w, fb.h, 8, 6, raw);
+}
+
+/** RGBA8 (Uint8ClampedArray) -> fb */
+export function fbFromRGBA(rgba, w, h) {
+  const fb = new FB(w, h);
+  const view = new Uint32Array(rgba.buffer, rgba.byteOffset, w * h);
+  fb.data.set(view);
+  return fb;
+}
+
+/** Réduction par moyenne de blocs (box filter) — bien plus doux que le plus proche. */
+export function fbDownscale(src, dstW, dstH) {
+  const dst = new FB(dstW, dstH);
+  const sx = src.w / dstW, sy = src.h / dstH;
+  for (let y = 0; y < dstH; y++) {
+    const y0 = Math.floor(y * sy), y1 = Math.max(y0 + 1, Math.floor((y + 1) * sy));
+    for (let x = 0; x < dstW; x++) {
+      const x0 = Math.floor(x * sx), x1 = Math.max(x0 + 1, Math.floor((x + 1) * sx));
+      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (let yy = y0; yy < y1; yy++) {
+        for (let xx = x0; xx < x1; xx++) {
+          const c = src.data[yy * src.w + xx];
+          r += c & 255; g += (c >> 8) & 255; b += (c >> 16) & 255; a += (c >>> 24) & 255;
+          n++;
+        }
+      }
+      dst.data[y * dstW + x] = rgba(Math.round(r / n), Math.round(g / n), Math.round(b / n), Math.round(a / n));
+    }
+  }
+  return dst;
+}
+
+/**
+ * Quantification par popularité puis écriture PNG indexée (1 octet/pixel) :
+ * indispensable pour garder les illustrations légères.
+ * Les couleurs officielles de la palette sont toujours conservées.
+ */
+export function fbToPNGIndexed(fb, official = [], maxColors = 256) {
+  // 1. comptage par bucket 5 bits/canal
+  const buckets = new Map();
+  for (let i = 0; i < fb.data.length; i++) {
+    const c = fb.data[i];
+    if (!(c >>> 24)) continue;
+    const key = ((c & 255) >> 3) << 10 | (((c >> 8) & 255) >> 3) << 5 | (((c >> 16) & 255) >> 3);
+    let b = buckets.get(key);
+    if (!b) { b = { n: 0, r: 0, g: 0, b: 0 }; buckets.set(key, b); }
+    b.n++; b.r += c & 255; b.g += (c >> 8) & 255; b.b += (c >> 16) & 255;
+  }
+  const sorted = [...buckets.values()].sort((a, b) => b.n - a.n);
+  const palette = [];
+  const addColour = (r, g, b) => {
+    for (const p of palette) if (p[0] === r && p[1] === g && p[2] === b) return;
+    palette.push([r, g, b]);
+  };
+  for (const p of official) addColour((p >> 16) & 255, (p >> 8) & 255, p & 255);
+  for (const b of sorted) {
+    if (palette.length >= maxColors) break;
+    addColour(Math.round(b.r / b.n), Math.round(b.g / b.n), Math.round(b.b / b.n));
+  }
+  // 2. table de correspondance par bucket (calcul paresseux)
+  const cache = new Map();
+  const nearest = (r, g, b) => {
+    const key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3);
+    let idx = cache.get(key);
+    if (idx !== undefined) return idx;
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < palette.length; i++) {
+      const dr = r - palette[i][0], dg = g - palette[i][1], db = b - palette[i][2];
+      const d = dr * dr + dg * dg + db * db;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    cache.set(key, best);
+    return best;
+  };
+  const idx = new Uint8Array(fb.w * fb.h);
+  let err = 0;
+  for (let i = 0; i < fb.data.length; i++) {
+    const c = fb.data[i];
+    const r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+    const k = nearest(r, g, b);
+    idx[i] = k;
+    const p = palette[k];
+    err += Math.abs(r - p[0]) + Math.abs(g - p[1]) + Math.abs(b - p[2]);
+  }
+  const plte = new Uint8Array(palette.length * 3);
+  palette.forEach((p, i) => { plte[i * 3] = p[0]; plte[i * 3 + 1] = p[1]; plte[i * 3 + 2] = p[2]; });
+  const raw = filterRows(idx, fb.w, fb.h, 1);
+  const png = pngAssemble(fb.w, fb.h, 8, 3, raw, [pngChunk('PLTE', plte)]);
+  png.palette = palette;
+  png.meanError = err / (fb.w * fb.h * 3);
+  return png;
 }

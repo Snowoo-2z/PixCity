@@ -9,6 +9,7 @@ import { fmt, fmtClock } from '../core/format.js';
 import { el, qs, setText, toggle } from './dom.js';
 import { Audio } from '../core/audio.js';
 import { startPurchase } from './pay.js';
+import { artBanner } from './art.js';
 import { toast, cityLog } from './toasts.js';
 import { rewardPop, confetti } from './fx.js';
 
@@ -19,6 +20,12 @@ export function initShopPanel(g) {
   gridNode = qs('#shop-list');
   adNode = qs('#shop-ad');
   gemsNode = qs('#shop-gems');
+  // illustration d'identité en tête de panneau (chargée à l'ouverture)
+  const bannerHost = document.querySelector('#panel-shop .panel-body');
+  if (bannerHost && !bannerHost.dataset.banner) {
+    bannerHost.dataset.banner = '1';
+    bannerHost.prepend(artBanner('shop', { alt: 'Échoppe à gemmes de PixCity' }));
+  }
   renderShop();
   bus.on('tick', () => {
     setText(gemsNode, fmt(Game.state.gems) + ' 💎');

@@ -97,10 +97,59 @@ validation doit toujours être faite par le serveur, jamais par le client.
 
 ---
 
+## 🎨 Identité visuelle (workflow des images)
+
+Toutes les illustrations du jeu partagent **une seule identité visuelle**, figée dans
+[`docs/ARTSTYLE.md`](docs/ARTSTYLE.md).
+
+**La règle :** un unique *prompt maître* décrit le style, la palette (13 couleurs
+officielles), la lumière et les interdits. Pour chaque image, **une seule ligne change** :
+`SUBJECT: …`. On ne touche jamais au style.
+
+```bash
+npm run art:check   # audit : palette, lumière chaude, monde froid, luminosité
+npm run art         # masters → dérivés web (réduction + quantification)
+```
+
+Ce qui est versionné :
+
+| Dossier | Rôle | Poids |
+|---|---|---|
+| `assets/art/*.png` | **masters** générés par IA avec le prompt maître (jamais modifiés) | 8,8 Mo |
+| `assets/art/web/*.png` | dérivés utilisés par le jeu, PNG indexé 256 couleurs | 1,4 Mo |
+| `assets/icons/*.png` | icônes PWA, dérivées de `art/icon.png` | 130 Ko |
+| `assets/art/PROMPT.txt` | le prompt maître, prêt à copier-coller | — |
+
+**Comment les images sont fabriquées.** Les modèles d'image ne savent pas produire du vrai
+pixel-art : ils génèrent une illustration de style pixel-art, avec des dizaines de milliers
+de couleurs. La chaîne maison fait le reste :
+
+1. génération avec le prompt maître (+ les masters déjà validés en référence) ;
+2. **audit automatique** (`artcheck.mjs`) : chaque image est décodée par un lecteur PNG
+   écrit à la main, puis notée sur la palette officielle, la part de lumière chaude, la
+   part de monde froid et la luminosité ;
+3. réduction par moyenne de blocs puis **quantification 256 couleurs** — les couleurs
+   officielles sont toujours conservées ;
+4. écriture d'un **PNG indexé compressé par notre propre DEFLATE** (`src/gfx/deflate.js`,
+   LZ77 + Huffman fixe, validé par zlib) : 8,8 Mo de masters deviennent 1,4 Mo.
+
+> Les tests (`npm test`, section « Cohérence visuelle des assets ») refusent tout asset qui
+> sortirait de la palette, qui deviendrait trop lumineux, ou qui perdrait le monde froid
+> indigo/navy — l'ADN visuel de PixCity.
+
+**Journal du style.** La v1 est née d'un premier jet où le style, la palette et la lumière
+étaient déjà justes, mais où les sujets dérivaient vers le médiéval (« tower » → château).
+La v1.1 a ajouté au prompt maître un bloc `PIXCITY LOOK` (gratte-ciel modernes, néons,
+rues asphaltées) et une interdiction explicite du médiéval. Leçon : la dérive vient du
+**sujet**, jamais du style.
+
 ## 🗂️ Architecture
 
 ```
 index.html            écran unique : boot, scène, HUD, panneaux, modales
+docs/ARTSTYLE.md      identité visuelle : prompt maître, palette, workflow
+assets/art/           masters IA + dérivés web + PROMPT.txt
+src/gfx/deflate.js    compresseur DEFLATE maison (PNG légers, zéro dépendance)
 styles/
   base.css            kit d'UI pixel-art (boutons, panneaux, modales, toasts)
   game.css            écrans de jeu (HUD, dock, boutique, tunnel de paiement…)
@@ -115,7 +164,8 @@ src/
     iap.js            définition des packs + effets (paiement = simulé)
     audio.js          SFX & musique WebAudio
     bus.js, format.js utilitaires
-  gfx/                moteur pixel-art (voir plus haut)
+  gfx/                moteur pixel-art (voir plus haut) + encodeur PNG/DEFLATE
+  ui/art.js           chargement paresseux des illustrations d'identité
   ui/                 interface : hud, panels, modales, tunnel de paiement, tutoriel
   app/
     game.js           orchestrateur : boucle, caméra, actions, sauvegarde auto

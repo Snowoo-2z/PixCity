@@ -1,0 +1,36 @@
+PIXCITY — 16-bit pixel art, cohesive retro arcade look.
+
+STYLE: authentic hand-placed pixel art; chunky visible square pixels; crisp hard edges;
+no anti-aliasing, no blur, no smooth vector shapes; limited palette of about 24 colours;
+dithered gradients; bold readable silhouettes; 1-pixel highlights.
+
+PALETTE (strict): deep night indigo #0a0e1c and #1b2550; navy #232c4f; sunset orange
+#ff9a5c; gold #ffd166 with cream #fff3c4; warm window glow #ffe9a0; cyan neon #6be3ff;
+magenta neon #ff4dd2; purple #b06bff; grass green #3f7a3c and #2f5d33; stone grey #8a8f96.
+
+PIXCITY LOOK (identity, never change): PixCity is a MODERN retro-futuristic town —
+glass-and-concrete office towers with gridded windows and flat roofs, low-rise shops with
+striped awnings and glowing neon tube signs, apartment blocks, a ferris wheel, a small
+rocket standing on a launch pad, asphalt streets with zebra crossings, street lamps and
+parked cars.
+
+LIGHT: warm sunset horizon fading into deep blue night; warm-lit windows against cool
+shadows; tiny 2-3 pixel glow halos around lamps and neon signs (never big soft glow);
+a few stars in the upper sky.
+
+MOOD: cosy, optimistic, retro-futuristic city at dusk; charming, slightly toy-like,
+colourful but not garish.
+
+COMPOSITION: horizontal widescreen band; sky in the upper third with small layered
+clouds; city in the middle (distant skyline behind, closer buildings in front); dark
+ground strip at the bottom; clear parallax feeling between layers.
+
+NEVER: medieval castles, crenellated towers, stone cottages, hanging lanterns, banners,
+crests, timber framing, cobblestone streets, dungeons or any fantasy-medieval element.
+
+NEVER: text, letters, numbers, logos, watermarks, UI, frames or borders; 3D render,
+photorealistic, painterly or airbrushed look; anime faces; excessive detail noise;
+more than 24 colours.
+
+--- puis, pour chaque image, une seule ligne qui change : ---
+SUBJECT: <le sujet de l'image>

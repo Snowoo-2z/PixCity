@@ -8,6 +8,8 @@
     "start": "node tools/serve.mjs",
     "dev": "node tools/serve.mjs",
     "preview": "node tools/preview.mjs",
+    "art": "node tools/assets.mjs",
+    "art:check": "node tools/artcheck.mjs",
     "test": "node tools/test.mjs"
   },
   "keywords": ["game", "idle", "pixel-art", "city-builder"],

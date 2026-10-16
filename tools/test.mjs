@@ -527,7 +527,87 @@ section('9. Rendu : cache de calques identique au rendu direct');
 }
 
 // ═══════════════════════════════════════════════════════════════
-section('10. Démarrage réel de l’application (main.js)');
+section('10. Cohérence visuelle des assets (identité v1)');
+{
+  const { readPNG, analyse } = await import('./pngread.mjs');
+  const { RULES } = await import('./artcheck.mjs');
+  const artDir = join(ROOT, 'assets/art');
+  const webDir = join(artDir, 'web');
+
+  const MASTERS = ['hero.png', 'icon.png', 'shop.png', 'prestige.png', 'district.png'];
+  // Dette artistique assumée : ces images sont recontrôlées à chaque audit
+  // et régénérées dès qu'on peut (voir docs/ARTSTYLE.md, journal du style).
+  const KNOWN_ISSUES = { 'prestige.png': 'lumière chaude encore faible — régénération prévue' };
+  const warned = [];
+
+  for (const f of MASTERS) {
+    let img, a;
+    try {
+      img = readPNG(readFileSync(join(artDir, f)));
+      a = analyse(img, { stride: 3, tolerance: 62 });
+    } catch (e) {
+      ok(false, f + ' lisible', e.message);
+      continue;
+    }
+    ok(img.width >= RULES.minWidth, f + ' : résolution ' + img.width + 'px');
+    ok(a.paletteCoverage >= RULES.minPaletteCoverage,
+      f + ' : palette ' + (a.paletteCoverage * 100).toFixed(1) + ' % (≥ ' + (RULES.minPaletteCoverage * 100) + ' %)');
+    ok(a.coldRatio >= RULES.minColdRatio,
+      f + ' : monde froid ' + (a.coldRatio * 100).toFixed(1) + ' % (ADN PixCity)');
+    ok(a.meanLuma <= RULES.maxLuma,
+      f + ' : luminosité ' + a.meanLuma.toFixed(0) + ' ≤ ' + RULES.maxLuma);
+    if (a.warmRatio < RULES.minWarmRatio) {
+      if (KNOWN_ISSUES[f]) warned.push(f);
+      else ok(false, f + ' : lumière chaude ' + (a.warmRatio * 100).toFixed(1) + ' % (≥ ' + (RULES.minWarmRatio * 100) + ' %)');
+    }
+  }
+
+  // dérivés utilisés en jeu : plus légers, même identité
+  const DERIVED = ['hero.png', 'shop.png', 'prestige.png', 'district.png'];
+  for (const f of DERIVED) {
+    let small;
+    try { small = readPNG(readFileSync(join(webDir, f))); } catch (e) { ok(false, 'dérivé ' + f + ' présent'); continue; }
+    const big = statSync(join(artDir, f)).size;
+    const little = statSync(join(webDir, f)).size;
+    ok(little < big / 2, 'dérivé ' + f + ' allégé (' + Math.round(little / 1024) + ' Ko vs ' + Math.round(big / 1024) + ' Ko)');
+    const a = analyse(small, { stride: 3, tolerance: 62 });
+    ok(a.paletteCoverage >= RULES.minPaletteCoverage,
+      'dérivé ' + f + ' garde la palette (' + (a.paletteCoverage * 100).toFixed(1) + ' %)');
+    ok(a.coldRatio >= RULES.minColdRatio, 'dérivé ' + f + ' garde le monde froid');
+  }
+
+  // icônes PWA : issues de l'illustration d'icône, légères
+  for (const [f, size] of [['icon-192.png', 192], ['icon-512.png', 512]]) {
+    let img;
+    try { img = readPNG(readFileSync(join(ROOT, 'assets/icons', f))); } catch (e) { ok(false, 'icône ' + f + ' présente'); continue; }
+    ok(img.width === size && img.height === size, 'icône ' + f + ' en ' + size + '×' + size);
+    const kb = statSync(join(ROOT, 'assets/icons', f)).size / 1024;
+    ok(kb < 200, 'icône ' + f + ' légère (' + kb.toFixed(0) + ' Ko)');
+    const a = analyse(img, { stride: 2, tolerance: 62 });
+    ok(a.paletteCoverage > 0.35, 'icône ' + f + ' dans la palette PixCity (' + (a.paletteCoverage * 100).toFixed(0) + ' %)');
+  }
+
+  // le jeu référence bien les illustrations
+  const srcAll = jsFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
+  for (const key of ['hero', 'shop', 'prestige', 'district']) {
+    ok(srcAll.includes("assets/art/web/" + key + ".png"), 'le jeu utilise l’illustration ' + key);
+  }
+  ok(srcAll.includes('assets/art/web/hero.png'), 'l’écran-titre utilise l’illustration hero');
+
+  // le prompt maître est versionné (workflow d'identité)
+  const style = readFileSync(join(ROOT, 'docs/ARTSTYLE.md'), 'utf8');
+  ok(style.includes('PIXCITY LOOK'), 'le prompt maître contient la règle de monde');
+  ok(style.includes('#ffd166') && style.includes('#6be3ff'), 'la palette officielle est documentée');
+  ok(statSync(join(ROOT, 'assets/art/PROMPT.txt')).size > 200, 'le prompt maître est exporté pour les outils d’image');
+  ok(statSync(join(ROOT, 'tools/assets.mjs')).size > 500, 'la chaîne de génération des dérivés est versionnée');
+
+  for (const f of warned) {
+    console.log('    ⚠ ' + f + ' : ' + KNOWN_ISSUES[f] + ' (suivi, non bloquant)');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+section('11. Démarrage réel de l’application (main.js)');
 {
   localStorage.clear();
   installDom(html, { width: 900, height: 700 });

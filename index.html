@@ -12,6 +12,14 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+<!-- partage social : illustration d'identité v1 (voir docs/ARTSTYLE.md).
+     En production, remplacez par une URL absolue pour un meilleur rendu. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="PixCity · construis ta ville pixel">
+<meta property="og:description" content="Idle city-builder pixel-art : tape, construis, améliore et fais grandir ta ville. Achats in-game simulés (démo gratuite).">
+<meta property="og:image" content="assets/art/web/icon-share.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="assets/art/web/icon-share.png">
 <link rel="stylesheet" href="styles/base.css">
 <link rel="stylesheet" href="styles/game.css">
 </head>
@@ -20,6 +28,7 @@
 
   <!-- ══════════ DÉMARRAGE ══════════ -->
   <div id="boot">
+    <img class="art-hero hidden" id="boot-art" alt="" draggable="false">
     <div class="boot-in">
       <div class="logo">PIX<span class="px">CITY</span><small>CONSTRUIS TA VILLE PIXEL</small></div>
       <div class="boot-bar"><i id="boot-bar"></i></div>

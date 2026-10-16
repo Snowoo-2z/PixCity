@@ -9,6 +9,7 @@ import { el, qs, setText } from './dom.js';
 import { openModal, close, infoModal } from './modal.js';
 import { rewardPop, confetti } from './fx.js';
 import { Audio } from '../core/audio.js';
+import { artBanner } from './art.js';
 
 /** Écran d'accueil au premier lancement */
 export function showIntro(Game, onStart) {
@@ -16,6 +17,7 @@ export function showIntro(Game, onStart) {
     title: '🏙️ Bienvenue à PixCity',
     dismissable: false,
     body: el('div', { class: 'col' }, [
+      artBanner('hero', { class: 'front', alt: 'PixCity au crépuscule', height: 200 }),
       el('p', { class: 'small', style: { margin: 0 }, html: 'Tape sur la ville, construis des bâtiments, encaisse en continu. C’est tout : <b>ça devient vite incontrôlable</b> (dans le bon sens).' }),
       el('div', { class: 'card' }, [
         el('div', { class: 'kv' }, [el('span', { class: 'k', text: '👆 1.' }), el('span', { class: 'v', text: 'Tape la ville → pièces 🪙' })]),
@@ -102,6 +104,7 @@ export function showPrestige(Game) {
   const h = openModal({
     title: '🌟 Prestige',
     body: el('div', { class: 'col' }, [
+      artBanner('prestige', { class: 'front', alt: 'PixCity s’élève vers les étoiles', height: 200 }),
       el('p', { class: 'small', style: { margin: 0 }, html: 'Tu remets la ville à zéro pour gagner des <b>étoiles permanentes</b> : chaque étoile augmente <b>toutes</b> tes productions de 10 %.' }),
       el('div', { class: 'card hi' }, [
         el('div', { class: 'row spread' }, [
@@ -145,10 +148,33 @@ export function showPrestige(Game) {
   return h;
 }
 
-/** Révélation d'un nouveau bâtiment */
+/** Révélation d'un nouveau bâtiment (avec l'illustration « district »). */
 export function showUnlock(Game, def) {
-  rewardPop(def.icon, 'NOUVEAU BÂTIMENT', def.name, 2000);
-  bus.emit('notify', { text: `${def.icon} ${def.name} débloqué ! Ouvre BÂTIR.`, kind: 'win', ms: 3200 });
+  Audio.play('levelup');
+  confetti(34);
+  const h = openModal({
+    title: '🏗️ Nouveau bâtiment débloqué',
+    body: el('div', { class: 'col' }, [
+      artBanner('district', { class: 'front', alt: 'Chantier de PixCity', height: 200 }),
+      el('div', { class: 'row', style: { gap: '10px' } }, [
+        el('div', { style: { fontSize: '34px' }, text: def.icon }),
+        el('div', { class: 'col grow', style: { gap: '2px' } }, [
+          el('div', { class: 'title-sm gold-text', text: def.name.toUpperCase() }),
+          el('div', { class: 'small dim', text: def.blurb }),
+        ]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'kv' }, [el('span', { class: 'k', text: 'Bâtiment disponible' }), el('span', { class: 'v', text: 'dès maintenant' })]),
+        el('div', { class: 'kv' }, [el('span', { class: 'k', text: 'Revenu de base' }), el('span', { class: 'v', text: fmt(def.income) + ' /s par unité' })]),
+      ]),
+    ]),
+    footer: [el('button', {
+      class: 'btn primary grow shine', text: '🏗️ CONSTRUIRE',
+      onclick: () => { close(); bus.emit('open:panel', 'build'); },
+    })],
+  });
+  bus.emit('notify', { text: `${def.icon} ${def.name} débloqué !`, kind: 'win', ms: 3200 });
+  return h;
 }
 
 /** Fin de la chaîne de quêtes */

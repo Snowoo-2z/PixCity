@@ -101,6 +101,23 @@ class Node {
     }
   }
   appendChild(n) { this.append(n); return n; }
+  prepend(...nodes) {
+    const prepared = [];
+    for (const n of nodes) {
+      const node = typeof n === 'object' && n !== null ? n : this.ownerDocument.createTextNode(String(n));
+      if (node.parentNode) node.parentNode.removeChild(node);
+      node.parentNode = this;
+      prepared.push(node);
+    }
+    this.children.unshift(...prepared);
+  }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
+  insertBefore(n, ref) {
+    const i = ref ? this.children.indexOf(ref) : -1;
+    if (i < 0) this.append(n);
+    else { n.parentNode = this; this.children.splice(i, 0, n); }
+    return n;
+  }
   removeChild(n) {
     const i = this.children.indexOf(n);
     if (i >= 0) this.children.splice(i, 1);

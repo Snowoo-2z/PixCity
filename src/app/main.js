@@ -51,6 +51,16 @@ async function boot() {
 
   const { fresh, broken } = Game.init(canvas);
 
+  // illustration d'identité en fond d'écran-titre (jamais bloquante,
+  // et ignorée sur les connexions annoncées comme lentes/économiques)
+  const bootArt = document.getElementById('boot-art');
+  const conn = navigator.connection || {};
+  const cheapNet = conn.saveData === true || /(^|-)2g$/.test(conn.effectiveType || '');
+  if (bootArt && !cheapNet) {
+    bootArt.addEventListener('load', () => bootArt.classList.remove('hidden'));
+    bootArt.src = 'assets/art/web/hero.png';
+  }
+
   const setProgress = (p) => { if (bar) bar.style.width = Math.round(p * 100) + '%'; };
   setProgress(0.05);
   await Game.sprites.preload((p) => setProgress(0.05 + p * 0.9), false);
