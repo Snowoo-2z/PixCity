@@ -83,6 +83,14 @@ src/gfx/surface.js   abstraction canvas/framebuffer (même code de rendu partout
 - **cache de calques + cache du ciel** (`layer()`, `_skyCache`) : le décor immuable (collines,
   routes, trottoirs, pavés) est cuit une fois hors-écran, donc la scène reste fluide sur mobile.
 
+Captures générées par les outils (aucune capture d'écran, tout est rendu par le code de dessin) :
+
+| Jour | Crépuscule | Nuit néon |
+|---|---|---|
+| ![ville de jour](docs/shots/ville-jour.png) | ![ville au crépuscule](docs/shots/ville-crepuscule.png) | ![ville la nuit en mode néon](docs/shots/ville-nuit-neon.png) |
+
+*(`node tools/city.mjs late --noneon --phase=1`, `--phase=2`, puis `late --phase=3`.)*
+
 ---
 
 ## 🛒 La boutique (achats simulés)

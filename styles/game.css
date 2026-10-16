@@ -86,7 +86,7 @@
   box-shadow: var(--shadow);
 }
 .coin-box .ico { font-size: 22px; line-height: 1; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.5)); }
-.coin-val { font-size: 25px; line-height: 1; color: var(--gold-l); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); font-variant-numeric: tabular-nums; }
+.coin-val { font-size: 25px; line-height: 1; color: var(--gold-l); text-shadow: var(--px-outline), 0 2px 0 rgba(0, 0, 0, 0.45); font-variant-numeric: tabular-nums; }
 .coin-box.pump { animation: pump 0.2s ease; }
 @keyframes pump { 50% { transform: scale(1.07); } }
 .rate { font-size: 15px; color: var(--cyan); text-shadow: 0 1px 0 #000; }
@@ -100,7 +100,7 @@
   box-shadow: var(--shadow); cursor: pointer;
 }
 .gem-box .ico { font-size: 18px; }
-.gem-val { font-size: 21px; color: #e5ccff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); font-variant-numeric: tabular-nums; }
+.gem-val { font-size: 21px; color: #e5ccff; text-shadow: var(--px-outline), 0 2px 0 rgba(0, 0, 0, 0.45); font-variant-numeric: tabular-nums; }
 .gem-box .plus { font-family: var(--font-tiny); font-size: 9px; color: var(--green); }
 .gem-box:hover { filter: brightness(1.15); }
 
@@ -116,6 +116,7 @@
 .hud-mid { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .stars-box { display: flex; align-items: center; gap: 5px; background: rgba(12, 16, 34, 0.85); border: 2px solid var(--line2); border-radius: 6px; padding: 3px 8px; font-size: 17px; white-space: nowrap; }
 .stars-box .ico { color: var(--gold); }
+.stars-box #stars-val { text-shadow: var(--px-outline); }
 
 /* Combo */
 #combo {
@@ -124,7 +125,7 @@
   z-index: 22; pointer-events: none; opacity: 0; transition: opacity 0.2s;
 }
 #combo.on { opacity: 1; }
-#combo .cb-label { font-family: var(--font-tiny); font-size: 10px; color: var(--gold-l); text-shadow: 2px 2px 0 #000; }
+#combo .cb-label { font-family: var(--font-tiny); font-size: 10px; color: var(--gold-l); text-shadow: var(--px-outline); }
 #combo .cb-bar { width: 132px; height: 7px; background: #0b1024; border: 2px solid #000; border-radius: 3px; overflow: hidden; }
 #combo .cb-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--red)); }
 #combo .cb-num { font-size: 22px; color: #fff; text-shadow: 2px 2px 0 #000; }
@@ -380,7 +381,7 @@
   text-align: center;
 }
 .reward-pop .r-ico { font-size: 56px; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.5)); }
-.reward-pop .r-txt { font-family: var(--font-tiny); font-size: 13px; color: var(--gold-l); text-shadow: 3px 3px 0 #000; }
+.reward-pop .r-txt { font-family: var(--font-tiny); font-size: 13px; color: var(--gold-l); text-shadow: var(--px-outline), 2px 2px 0 rgba(0, 0, 0, 0.5); }
 .reward-pop .r-sub { font-size: 22px; color: #fff; text-shadow: 2px 2px 0 #000; }
 @keyframes rewardIn { from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } }
 

@@ -55,7 +55,7 @@ for (const name of names) {
   state.lifetime = stage.lifetime;
   state.run = stage.lifetime;
   for (const k in stage.buildings) state.buildings[k] = stage.buildings[k];
-  state.skins.neon = !!stage.neon;
+  state.skins.neon = process.argv.includes('--noneon') ? false : !!stage.neon;
 
   const fb = new FB(WORLD.w, WORLD.h);
   const s = new FBSurface(fb);
