@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1c">
+<meta name="description" content="PixCity — construis ta ville pixel par pixel, tape, améliore, et deviens le maire le plus riche du multivers.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>PixCity · construis ta ville pixel</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/game.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════ DÉMARRAGE ══════════ -->
+  <div id="boot">
+    <div class="boot-in">
+      <div class="logo">PIX<span class="px">CITY</span><small>CONSTRUIS TA VILLE PIXEL</small></div>
+      <div class="boot-bar"><i id="boot-bar"></i></div>
+      <div class="boot-tip" id="boot-tip">Préparation de la ville<span class="spinner-dot">…</span></div>
+      <div class="boot-note">
+        JEU DE DÉMONSTRATION<br>
+        Les achats intégrés sont SIMULÉS et gratuits : aucun paiement réel.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCÈNE ══════════ -->
+  <div id="stage">
+    <div id="canvas-wrap">
+      <canvas id="scene" width="640" height="360"></canvas>
+      <div id="hotspots"></div>
+    </div>
+    <div id="vignette"></div>
+    <div id="crt"></div>
+  </div>
+
+  <!-- ══════════ HUD ══════════ -->
+  <header id="hud">
+    <div class="hud-left">
+      <div class="coin-box" id="coin-box">
+        <span class="ico">🪙</span>
+        <div class="col" style="gap:2px">
+          <span class="coin-val" id="coin-val">0</span>
+          <span class="rate" id="rate">+0 / s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-mid">
+      <div class="stars-box"><span class="ico">⭐</span><span id="stars-val">0</span><span class="dim tiny" id="stars-label">étoiles</span></div>
+      <div class="row" style="gap:4px">
+        <span class="chip cyan">🏙️ <span id="city-count">0</span></span>
+        <span class="chip purple" id="boost-chip" style="display:none">🚀 <span id="boost-chip-txt"></span></span>
+      </div>
+    </div>
+
+    <div class="hud-right">
+      <div class="gem-box" id="gem-box" title="Ouvrir la boutique">
+        <span class="ico">💎</span>
+        <span class="gem-val" id="gem-val">0</span>
+        <span class="plus">＋</span>
+      </div>
+      <div class="icon-row">
+        <button class="icon-btn" id="btn-sfx" title="Sons">🔈</button>
+        <button class="icon-btn" id="btn-music" title="Musique">🎵</button>
+        <button class="icon-btn" id="btn-crt" title="Filtre CRT">📺</button>
+        <button class="icon-btn" id="btn-menu" title="Options">⚙️</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="combo">
+    <div class="cb-label">COMBO <span class="cb-num" id="cb-num">×1</span></div>
+    <div class="cb-bar"><i id="cb-bar" style="width:0%"></i></div>
+  </div>
+
+  <div id="boost">
+    <span class="b-mult" id="b-mult">×5</span>
+    <span class="b-time" id="b-time">90</span>
+    <span class="tiny dim" id="b-label">fête</span>
+  </div>
+
+  <div class="tap-hint" id="tap-hint">👆 TAPE POUR GAGNER DES PIÈCES</div>
+
+  <aside id="logs"></aside>
+  <aside id="toasts"></aside>
+
+  <div id="tutorial"></div>
+  <div id="fx-layer"></div>
+
+  <!-- ══════════ DOCK ══════════ -->
+  <nav id="dock">
+    <button class="dock-btn" id="dock-build" data-panel="build">
+      <span class="d-ico">🏗️</span><span class="d-label">BÂTIR</span><span class="dot gold hidden" id="dot-build"></span>
+    </button>
+    <button class="dock-btn" id="dock-up" data-panel="up">
+      <span class="d-ico">✨</span><span class="d-label">BONUS</span><span class="dot hidden" id="dot-up"></span>
+    </button>
+    <button class="dock-btn" id="dock-shop" data-panel="shop">
+      <span class="d-ico">💎</span><span class="d-label">BOUTIQUE</span><span class="dot hidden" id="dot-shop"></span>
+    </button>
+    <button class="dock-btn" id="dock-quests" data-panel="quests">
+      <span class="d-ico">📋</span><span class="d-label">QUÊTES</span><span class="dot hidden" id="dot-quests"></span>
+    </button>
+    <button class="dock-btn" id="dock-ach" data-panel="ach">
+      <span class="d-ico">🏆</span><span class="d-label">SUCCÈS</span><span class="dot hidden" id="dot-ach"></span>
+    </button>
+    <button class="dock-btn" id="dock-prestige">
+      <span class="d-ico">🌟</span><span class="d-label">PRESTIGE</span><span class="dot hidden" id="dot-prestige"></span>
+    </button>
+  </nav>
+
+  <!-- ══════════ PANNEAUX ══════════ -->
+  <div id="panels">
+    <section class="panel" id="panel-build">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">🏗️ BÂTIMENTS</span>
+        <span class="spacer"></span>
+        <button class="btn small ghost" data-close="panel-build">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="row spread card" style="margin-bottom:8px">
+          <div class="col" style="gap:2px">
+            <span class="title-xs">Production</span>
+            <span class="rate big" id="build-income">+0 / s</span>
+          </div>
+          <div class="col" style="gap:2px; align-items:flex-end">
+            <span class="title-xs">Multiplicateur</span>
+            <span class="rate" id="build-mult">×1</span>
+          </div>
+        </div>
+        <div class="row" style="gap:4px; margin-bottom:8px; flex-wrap:wrap">
+          <button class="btn tiny" data-buymode="1">×1</button>
+          <button class="btn tiny" data-buymode="10">×10</button>
+          <button class="btn tiny" data-buymode="100">×100</button>
+          <button class="btn tiny" data-buymode="max">MAX</button>
+          <span class="spacer"></span>
+          <span class="tiny dimmer">Achat groupé</span>
+        </div>
+        <div class="list" id="build-list"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-up">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">✨ BONUS PERMANENTS</span>
+        <span class="spacer"></span>
+        <span class="gem-val" id="up-gems">0 💎</span>
+        <button class="btn small ghost" data-close="panel-up">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="shop-note" style="margin-top:0">
+          Les bonus s'achètent avec des <b>gemmes</b> et restent pour toujours, même après un prestige.
+        </div>
+        <div class="list" id="up-list" style="margin-top:8px"></div>
+        <div class="hr"></div>
+        <div class="title-xs" style="margin-bottom:6px">Améliorations uniques</div>
+        <div class="list" id="unique-list"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-shop">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">💎 BOUTIQUE</span>
+        <span class="spacer"></span>
+        <span class="gem-val" id="shop-gems">0 💎</span>
+        <button class="btn small ghost" data-close="panel-shop">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="fake-tag">⚠️ ACHATS SIMULÉS — AUCUN PAIEMENT RÉEL</div>
+        <p class="tiny dim" style="margin:8px 0">
+          Version de démonstration : tu peux tout tester gratuitement. Le bouton imite un vrai achat
+          (connexion à la boutique, validation de la commande) mais rien n'est débité et tout est local.
+        </p>
+        <div id="shop-ad"></div>
+        <div id="shop-list" style="margin-top:8px"></div>
+        <div class="shop-note">
+          💡 Astuce : tu gagnes aussi des gemmes gratuitement avec les <b>quêtes</b>, les <b>succès</b> et la
+          <b>pub récompensée</b> ci-dessus.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-quests">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">📋 QUÊTES</span>
+        <span class="spacer"></span>
+        <button class="btn small ghost" data-close="panel-quests">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="card hi" id="chain-card"></div>
+        <div class="row spread" style="margin:12px 0 6px">
+          <span class="title-xs">Défis du jour <span class="dimmer" id="daily-timer"></span></span>
+          <span class="tiny dim" id="daily-done">0/3</span>
+        </div>
+        <div class="list" id="daily-list"></div>
+        <div class="hr"></div>
+        <div class="row spread">
+          <span class="title-xs">Série de jours</span>
+          <span class="chip gold" id="streak-chip">🔥 0</span>
+        </div>
+        <p class="tiny dimmer" style="margin:6px 0 0">
+          Reviens chaque jour : les défis sont générés selon ta progression.
+        </p>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-ach">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">🏆 SUCCÈS</span>
+        <span class="spacer"></span>
+        <span class="tiny dim" id="ach-count">0/0</span>
+        <button class="btn small ghost" data-close="panel-ach">✕</button>
+      </div>
+      <div class="panel-body">
+        <p class="tiny dim" style="margin:0 0 8px">Chaque succès rapporte des gemmes, automatiquement.</p>
+        <div class="ach-grid" id="ach-grid"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-stats">
+      <div class="panel-head">
+        <span class="grip"></span>
+        <span class="title-md gold-text">⚙️ OPTIONS & STATS</span>
+        <span class="spacer"></span>
+        <button class="btn small ghost" data-close="panel-stats">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="title-xs" style="margin-bottom:6px">Réglages</div>
+        <div class="row wrap" style="gap:6px">
+          <button class="btn small" id="opt-sfx">🔈 Sons</button>
+          <button class="btn small" id="opt-music">🎵 Musique</button>
+          <button class="btn small" id="opt-crt">📺 CRT</button>
+          <button class="btn small" id="opt-particles">✨ Particules</button>
+          <button class="btn small" id="opt-shake">📳 Secousses</button>
+          <button class="btn small" id="opt-haptics">📱 Vibrations</button>
+        </div>
+        <div class="hr"></div>
+        <div class="title-xs" style="margin-bottom:6px">Statistiques</div>
+        <div class="stat-grid" id="stat-grid"></div>
+        <div class="hr"></div>
+        <div class="title-xs" style="margin-bottom:6px">Sauvegarde</div>
+        <p class="tiny dim" style="margin:0 0 6px">La partie se sauvegarde automatiquement dans ce navigateur.</p>
+        <div class="row wrap" style="gap:6px">
+          <button class="btn small green" id="btn-save">💾 Sauvegarder</button>
+          <button class="btn small" id="btn-export">📤 Exporter</button>
+          <button class="btn small" id="btn-import">📥 Importer</button>
+          <button class="btn small danger" id="btn-wipe">🗑️ Effacer</button>
+        </div>
+        <div class="hr"></div>
+        <div class="notice">
+          <b>Achats in-game = démonstration.</b> Le paiement est simulé localement : aucun débit,
+          aucune donnée bancaire, aucune connexion à un serveur de paiement.
+        </div>
+        <p class="tiny dimmer center" style="margin:10px 0 0">
+          PixCity v1.0 · fait à la main, pixels compris 💛
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <!-- ══════════ MODALES ══════════ -->
+  <div id="modals"></div>
+  <div id="fx-pop"></div>
+
+  <!-- Offre flash -->
+  <div id="offer-pop">
+    <div class="offer-card" id="offer-card"></div>
+  </div>
+</div>
+
+<script type="module" src="src/app/main.js"></script>
+</body>
+</html>

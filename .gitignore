@@ -1,0 +1,10 @@
+# Ignorer les artefacts générés
+node_modules/
+tools/out/
+dist/
+*.log
+
+# Éditeurs / OS
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,15 @@
+{
+  "name": "pixcity",
+  "version": "1.0.0",
+  "description": "PixCity — idle city-builder pixel-art (jeu complet, achats in-game simulés)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "dev": "node tools/serve.mjs",
+    "preview": "node tools/preview.mjs",
+    "test": "node tools/test.mjs"
+  },
+  "keywords": ["game", "idle", "pixel-art", "city-builder"],
+  "license": "MIT"
+}
