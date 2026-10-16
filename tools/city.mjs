@@ -41,6 +41,11 @@ const STAGES = {
   },
 };
 
+// horloge simulée : --phase=0..4 (aube 0, jour 1, crépuscule 2, nuit 3)
+const phaseArg = process.argv.find((a) => a.startsWith('--phase='));
+const DAY = 420000;
+const fakeNow = phaseArg ? (Number(phaseArg.slice(8)) / 4) * DAY : null;
+
 const which = (process.argv[2] || 'all');
 const names = which === 'all' ? Object.keys(STAGES) : [which];
 
@@ -56,15 +61,17 @@ for (const name of names) {
   const s = new FBSurface(fb);
   const scene = new CityScene(nodeSprites);
   // on simule quelques secondes pour que bulles/taxis/voitures se placent
-  for (let i = 0; i < 240; i++) scene.update(1 / 30, i * 33, state);
+  const t0 = fakeNow === null ? Date.now() : fakeNow;
+  for (let i = 0; i < 240; i++) scene.update(1 / 30, t0 + i * 33, state);
   // taxi visible sur l'aperçu
   if (name === 'mid' || name === 'late') scene.spawnTaxi();
   scene.taxi && (scene.taxi.x = name === 'late' ? 300 : 180);
   scene.addFloat('+1,2 K', 320, 210, { color: 0xffe9a0, size: 14 });
   scene.burst(320, 220, { n: 14, colors: [0xffd166, 0xfff6c4, 0xd8a520] });
-  scene.draw(s, state, Date.now());
-  writeFileSync(OUT + 'city-' + name + '.png', Buffer.from(fbToPNG(fb)));
-  console.log('✓ outils/out/city-' + name + '.png');
+  scene.draw(s, state, fakeNow === null ? Date.now() : fakeNow);
+  const suffix = phaseArg ? '-p' + Number(process.argv.find((a) => a.startsWith('--phase=')).slice(8)) : '';
+  writeFileSync(OUT + 'city-' + name + suffix + '.png', Buffer.from(fbToPNG(fb)));
+  console.log('✓ outils/out/city-' + name + suffix + '.png');
 
   // zoom optionnel : --crop=x,y,w,h[,échelle]
   const cropArg = process.argv.find((a) => a.startsWith('--crop='));

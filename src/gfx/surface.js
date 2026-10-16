@@ -51,6 +51,23 @@ export class FBSurface {
 
   sprite(img, x, y) { this.fb.blit(img, Math.round(x), Math.round(y + this.oy)); }
 
+  /** Sprite étiré (au plus proche) : halos, flaques, ombres. */
+  spriteScaled(img, x, y, w, h) {
+    x = Math.round(x); y = Math.round(y + this.oy);
+    w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
+    for (let row = 0; row < h; row++) {
+      const sy = Math.min(img.h - 1, Math.floor((row * img.h) / h));
+      for (let col = 0; col < w; col++) {
+        const sx = Math.min(img.w - 1, Math.floor((col * img.w) / w));
+        const c = img.data[sy * img.w + sx];
+        const a = (c >>> 24) & 255;
+        if (!a) continue;
+        if (this.alpha >= 1) this.fb.px(x + col, y + row, c);
+        else this.fb.px(x + col, y + row, rgba(c & 255, (c >> 8) & 255, (c >> 16) & 255, Math.round(a * this.alpha)));
+      }
+    }
+  }
+
   line(x0, y0, x1, y1, width, color) {
     const c = hexToInt(color);
     this.fb.line(Math.round(x0), Math.round(y0 + this.oy), Math.round(x1), Math.round(y1 + this.oy), rgba((c >> 16) & 255, (c >> 8) & 255, c & 255, 255));
@@ -114,6 +131,14 @@ export class CanvasSurface {
 
   sprite(img, x, y) { this.ctx.drawImage(img, Math.round(x), Math.round(y)); }
 
+  /** Sprite étiré (au plus proche) : halos, flaques, ombres. */
+  spriteScaled(img, x, y, w, h) {
+    const prev = this.ctx.imageSmoothingEnabled;
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(img, Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    this.ctx.imageSmoothingEnabled = prev;
+  }
+
   line(x0, y0, x1, y1, width, color) {
     this.ctx.strokeStyle = intToCss(hexToInt(color));
     this.ctx.lineWidth = width;
@@ -144,6 +169,12 @@ export class CanvasSurface {
     ctx.font = `${o.weight || ''} ${size}px ${o.font || 'VT323, monospace'}`.trim();
     ctx.textAlign = o.align || 'left';
     ctx.textBaseline = o.baseline || 'top';
+    if (o.outline) {
+      ctx.lineWidth = o.outlineWidth || 3;
+      ctx.strokeStyle = intToCss(o.outline);
+      ctx.lineJoin = 'round';
+      ctx.strokeText(str, Math.round(x), Math.round(y));
+    }
     if (o.shadow !== false) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       ctx.fillText(str, Math.round(x) + (o.shadowX ?? 1), Math.round(y) + (o.shadowY ?? 1));
@@ -168,6 +199,62 @@ export class CanvasSurface {
   popClip() { this.ctx.restore(); }
   save() { this.ctx.save(); }
   restore() { this.ctx.restore(); }
+}
+
+/** Matrice de Bayer 4×4 : la base du tramage « rétro ». */
+export const BAYER4 = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
+
+/**
+ * Dégradé vertical « à bandes tramées » : signature du pixel-art rétro
+ * (un dégradé lisse trahirait un rendu moderne). Les pixels d'une même
+ * ligne sont groupés en segments pour limiter les appels de dessin.
+ */
+export function paintVerticalGradient(s, x, y, w, h, stops, opts = {}) {
+  const levels = opts.levels || 10;
+  const dither = opts.dither !== false;
+  const ramp = [];
+  for (let i = 0; i < levels; i++) ramp.push(sampleStops(stops, levels <= 1 ? 0 : i / (levels - 1)));
+  for (let row = 0; row < h; row++) {
+    const t = h <= 1 ? 0 : row / (h - 1);
+    const pos = t * (levels - 1);
+    const i0 = Math.max(0, Math.min(levels - 1, Math.floor(pos)));
+    const i1 = Math.max(0, Math.min(levels - 1, i0 + 1));
+    const frac = pos - i0;
+    const c0 = ramp[i0], c1 = ramp[i1];
+    if (!dither || frac <= 0.02 || c0 === c1) { s.fillRect(x, y + row, w, 1, c0); continue; }
+    if (frac >= 0.98) { s.fillRect(x, y + row, w, 1, c1); continue; }
+    const by = (row & 3) * 4;
+    let runStart = 0, runCol = null;
+    for (let col = 0; col < w; col++) {
+      const th = (BAYER4[by + (col & 3)] + 0.5) / 16;
+      const c = frac > th ? c1 : c0;
+      if (runCol === null) { runCol = c; runStart = col; }
+      else if (c !== runCol) { s.fillRect(x + runStart, y + row, col - runStart, 1, runCol); runCol = c; runStart = col; }
+    }
+    if (runCol !== null) s.fillRect(x + runStart, y + row, w - runStart, 1, runCol);
+  }
+}
+
+/**
+ * Rectangle tramé : `ratio` = proportion de pixels allumés (0..1).
+ * Sert aux flaques, ombres douces, neige au sol et halos.
+ */
+export function ditherRect(s, x, y, w, h, colour, ratio, ox = 0, oy = 0) {
+  if (ratio <= 0) return;
+  if (ratio >= 1) { s.fillRect(x, y, w, h, colour); return; }
+  for (let row = 0; row < h; row++) {
+    let runStart = 0, running = false;
+    for (let col = 0; col <= w; col++) {
+      const on = col < w && ratio > (BAYER4[((row + oy) & 3) * 4 + ((col + ox) & 3)] + 0.5) / 16;
+      if (on && !running) { running = true; runStart = col; }
+      else if (!on && running) { s.fillRect(x + runStart, y + row, col - runStart, 1, colour); running = false; }
+    }
+  }
 }
 
 function sampleStops(stops, t) {

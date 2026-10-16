@@ -29,9 +29,11 @@ python3 -m http.server 5173
 | Commande | Effet |
 |---|---|
 | `npm start` | Serveur de dev (zéro dépendance, `0.0.0.0:5173`) |
-| `npm test` | **143 tests** : économie, sauvegarde, achat simulé, UI, démarrage réel |
+| `npm test` | **190 tests** : économie, sauvegarde, achat simulé, UI, cohérence visuelle, démarrage réel |
 | `npm run preview` | Rend le pixel-art en PNG (bâtiments, décors) |
-| `node tools/city.mjs all` | Rend la scène complète à 3 stades de jeu (PNG) |
+| `node tools/preview.mjs 2 --sheet` | Planche de tous les bâtiments à un palier (PNG) |
+| `node tools/city.mjs late` | Rend la scène complète à un stade de jeu (PNG) — `--phase=0..3` fige l'heure, `--crop=x,y,w,h[,zoom]` recadre |
+| `node tools/zoom.mjs cabane,cafe 3 4` | Loupe ×N sur quelques bâtiments (« est-ce que ça tient à l'écran ? ») |
 | `node tools/icons.mjs` | Régénère les icônes PWA |
 
 ---
@@ -68,6 +70,18 @@ src/gfx/sprites.js   recettes des 12 bâtiments + décors (arbres, lampadaires, 
 src/gfx/city.js      la scène : ciel, collines, routes, parcelles, passants, effets
 src/gfx/surface.js   abstraction canvas/framebuffer (même code de rendu partout)
 ```
+
+**Passe graphique (rendu en jeu)** — le look « 16-bit » tient à quatre recettes :
+
+- **tramage Bayer 4×4** (`BAYER4`, `ditherRect`, `paintVerticalGradient`) : plus de dégradés
+  lisses — le ciel, l'herbe et les trottoirs sont peints en bandes quantifiées avec des
+  transitions tramées, comme sur une console 16 bits ;
+- **contours de silhouette** (`outlineSilhouette`) sur chaque bâtiment et chaque décor :
+  la ville se détache du ciel et reste lisible en miniature ;
+- **halos tramés** (`drawGlow`, `drawBubble`, lampadaires, phares, néons) : la lumière chaude
+  est posée en pixels épars, jamais en aplat flou ;
+- **cache de calques + cache du ciel** (`layer()`, `_skyCache`) : le décor immuable (collines,
+  routes, trottoirs, pavés) est cuit une fois hors-écran, donc la scène reste fluide sur mobile.
 
 ---
 
@@ -173,9 +187,10 @@ src/
     main.js           point d'entrée, entrées tactiles/clavier
 tools/
   serve.mjs           serveur statique de dev
-  test.mjs            143 tests (économie, UI, achat simulé, démarrage réel)
+  test.mjs            190 tests (économie, UI, achat simulé, visuel, démarrage réel)
   domstub.mjs         DOM minimal pour tester le jeu sans navigateur
-  preview.mjs/city.mjs/icons.mjs   générateurs d'images de contrôle
+  preview.mjs/city.mjs/zoom.mjs    générateurs d'images de contrôle
+  icons.mjs            icônes PWA (depuis assets/art)
 ```
 
 ### Sauvegarde

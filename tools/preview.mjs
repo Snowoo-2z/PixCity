@@ -29,12 +29,33 @@ function backdrop(fb) {
   for (let x = 0; x < fb.w; x += 3) fb.px(x, fb.h - 8 + (x % 5), hex(0x276b2d));
 }
 
+const sheetMode = process.argv.includes('--sheet');
 const tiers = process.argv[2] ? process.argv[2].split(',').map(Number) : [0, 2, 4];
 const pad = 14;
 const cellW = 110;
 const cellH = 150;
 const neon = process.argv.includes('--neon');
 
+if (sheetMode) {
+  // planche horizontale : tous les bâtiments au même palier, sur herbe
+  const tier = tiers[0];
+  const W = 76 * BUILDINGS.length + 20;
+  const H = 150;
+  const sheetS = new FB(W, H);
+  for (let y = 0; y < H; y++) {
+    const t = y / H;
+    sheetS.hline(0, y, W, rgba(Math.round(24 + 20 * t), Math.round(28 + 22 * t), Math.round(70 + 30 * (1 - t)), 255));
+  }
+  sheetS.rect(0, 118, W, H - 118, hex(0x3f7a3c));
+  sheetS.rect(0, 118, W, 2, hex(0x4f8f3a));
+  BUILDINGS.forEach((def, i) => {
+    const spr = drawBuilding(def, tier, 0, false);
+    sheetS.blit(spr, 10 + i * 76 - Math.floor(spr.w / 2) + 38, 120 - (spr.h - 3));
+  });
+  writeFileSync(OUT + 'sheet.png', Buffer.from(fbToPNG(sheetS)));
+  console.log('✓ outils/out/sheet.png (palier ' + tier + ')');
+  process.exit(0);
+}
 const sheet = new FB(cellW * tiers.length + pad, cellH * BUILDINGS.length + pad);
 backdrop(sheet);
 

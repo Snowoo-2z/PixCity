@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { BUILDINGS, tierOf, nextTierAt } from '../core/data.js';
 import { drawNature } from './sprites.js';
-import { mulberry } from './surface.js';
+import { mulberry, paintVerticalGradient, ditherRect, BAYER4 } from './surface.js';
 
 export const WORLD = { w: 640, h: 360 };
 export const SKY_H = 268;
@@ -63,6 +63,8 @@ export class CityScene {
   constructor(sprites) {
     this.sprites = sprites;
     this._layers = new Map();
+    this._skyCache = new Map();   // dégradé du ciel, cuit par tranche d'heure
+    this.shooting = 0;            // étoile filante en cours
     this.useLayers = true;
     this.rnd = mulberry(20251016);
     this.particles = [];
@@ -109,19 +111,51 @@ export class CityScene {
         v: 2 + r() * 4, kind: Math.floor(r() * 3),
       });
     }
-    // décor fixe
-    const veg = ['tree', 'pine', 'bush', 'flower', 'lamp', 'bench', 'fountain', 'rock', 'sign'];
-    for (let i = 0; i < 46; i++) {
-      const front = r() < 0.45;
-      const kind = veg[Math.floor(r() * veg.length)];
-      const y = front ? 344 + r() * 14 : 286 + r() * 30;
-      const x = 6 + r() * (WORLD.w - 12);
-      if (kind === 'lamp' || kind === 'bench' || kind === 'sign') {
-        this.props.push({ kind, x, y, v: Math.floor(r() * 3), floor: front ? 1 : 0 });
-      } else if (r() < 0.75) {
-        this.props.push({ kind, x, y, v: Math.floor(r() * 3), floor: front ? 1 : 0 });
-      }
+    const add = (kind, x, y, floor, v) => this.props.push({
+      kind, x: Math.round(x), y: Math.round(y), floor,
+      v: v === undefined ? Math.floor(r() * 3) : v,
+    });
+
+    // ── lampadaires alignés le long des trottoirs ──────────
+    let n = 0;
+    for (let x = 30; x < WORLD.w; x += 84, n++) {
+      add('lamp', x, 316, 0, 0);                       // bande centrale
+      if (n % 2 === 0) add('bench', x + 28, 314, 0);
+      if (n % 3 === 0) add('bin', x - 15, 314, 0);
     }
+    n = 0;
+    for (let x = 58; x < WORLD.w; x += 116, n++) {
+      add('lamp', x, 353, 1, 0);                       // premier plan
+      if (n % 2 === 0) add('bench', x + 32, 352, 1);
+    }
+    // ── arrêts de bus, bouches d'incendie, boîtes aux lettres
+    add('busstop', 152, 353, 1);
+    add('busstop', 476, 353, 1);
+    for (let i = 0; i < 4; i++) add('hydrant', 96 + i * 132 + Math.floor(r() * 26), 353, 1);
+    for (let i = 0; i < 3; i++) add('mailbox', 210 + i * 158 + Math.floor(r() * 34), 352, 1);
+    // ── végétation : arbres taillés puis bosquets ──────────
+    for (let x = 10; x < WORLD.w; x += 47) {
+      const k = r();
+      if (k < 0.4) add('tree', x + r() * 16, 320 + r() * 3, 0);
+      else if (k < 0.58) add('pine', x + r() * 16, 320, 0);
+      else if (k < 0.74) add('bush', x + r() * 18, 324, 0);
+      else if (k < 0.86) add('flower', x + r() * 18, 323, 0);
+      else add('birch', x + r() * 16, 320, 0);
+    }
+    for (let x = 22; x < WORLD.w; x += 61) {
+      const k = r();
+      if (k < 0.42) add('tree', x + r() * 18, 354 + r() * 3, 1);
+      else if (k < 0.58) add('birch', x + r() * 18, 354, 1);
+      else if (k < 0.72) add('bush', x + r() * 18, 356, 1);
+      else if (k < 0.82) add('flower', x + r() * 18, 356, 1);
+      else if (k < 0.88) add('rock', x + r() * 18, 356, 1);
+    }
+    // ── vie de quartier ────────────────────────────────────
+    add('stall', 322, 355, 1);
+    add('traffic', 250, 352, 1);
+    add('fountain', 418, 320, 0);
+    add('sign', 388, 320, 0);
+    add('traffic', 566, 320, 0);
     // voitures
     for (let i = 0; i < 5; i++) this.cars.push(this.makeCar(i));
     // passants
@@ -398,39 +432,97 @@ export class CityScene {
 
   /** Dégradé du ciel (utilisé aussi pour pré-remplir les calques). */
   drawSkyGradient(s, sky) {
-    s.gradient(0, 0, WORLD.w, SKY_H, [[0, sky.top], [0.55, mixInt(sky.top, sky.bot, 0.55)], [1, sky.bot]]);
-    s.gradient(0, SKY_H, WORLD.w, WORLD.h - SKY_H, [[0, sky.bot], [1, mixInt(sky.bot, 0x1b2340, 0.35)]]);
+    const haze = mixInt(sky.bot, 0xfff6d8, 0.22);          // lueur au ras de l'horizon
+    paintVerticalGradient(s, 0, 0, WORLD.w, SKY_H, [
+      [0, sky.top],
+      [0.34, mixInt(sky.top, sky.bot, 0.3)],
+      [0.64, mixInt(sky.top, sky.bot, 0.62)],
+      [0.88, sky.bot],
+      [1, haze],
+    ], { levels: 14 });
+    // sous la ligne d'horizon (recouvert par le sol, sert de pré-remplissage)
+    paintVerticalGradient(s, 0, SKY_H, WORLD.w, WORLD.h - SKY_H, [
+      [0, mixInt(sky.bot, haze, 0.5)],
+      [1, mixInt(sky.bot, 0x1b2340, 0.42)],
+    ], { levels: 6 });
   }
 
   drawSky(s, sky, now) {
-    this.drawSkyGradient(s, sky);
-    // étoiles
+    // dégradé du ciel : cuit une fois par tranche de 15 min de jeu
+    const bucket = Math.floor(this.timeOfDay * 24);
+    let canvas = null;
+    if (this.useLayers && s.offscreen) {
+      canvas = this._skyCache.get(bucket) || null;
+      if (!canvas) {
+        const off = s.offscreen(WORLD.w, SKY_H, 0);
+        if (off) {
+          this.drawSkyGradient(off, sky);
+          canvas = off.layerCanvas;
+          this._skyCache.set(bucket, canvas);
+          if (this._skyCache.size > 6) this._skyCache.delete(this._skyCache.keys().next().value);
+        }
+      }
+    }
+    if (canvas) s.sprite(canvas, 0, 0);
+    else this.drawSkyGradient(s, sky);
+
+    // ── étoiles ────────────────────────────────────────────
     if (sky.star > 0.02) {
       const r = mulberry(99);
-      s.setAlpha(sky.star);
-      for (let i = 0; i < 120; i++) {
+      const a = Math.min(1, sky.star);
+      for (let i = 0; i < 150; i++) {
         const x = Math.floor(r() * WORLD.w);
-        const y = Math.floor(r() * (SKY_H - 60));
-        const tw = 0.6 + 0.4 * Math.sin(now / 900 + i);
-        if (tw > 0.72) s.fillRect(x, y, 1, 1, i % 9 === 0 ? 0xbfe8ff : 0xfff8e0);
+        const v = r();
+        const y = Math.floor(2 + v * v * (SKY_H - 90));       // plus denses en haut
+        const tw = 0.55 + 0.45 * Math.sin(now / 700 + i * 1.7);
+        if (tw < 0.5) continue;
+        const big = i % 17 === 0;
+        s.setAlpha(a * (0.4 + 0.6 * tw));
+        s.fillRect(x, y, big ? 2 : 1, big ? 2 : 1, i % 9 === 0 ? 0xbfe8ff : 0xfff8e0);
+        if (big && tw > 0.88) {                               // croix scintillante
+          s.setAlpha(a * 0.45);
+          s.fillRect(x - 2, y, 6, 1, 0xdfefff);
+          s.fillRect(x, y - 2, 1, 6, 0xdfefff);
+        }
       }
       s.setAlpha(1);
+      // étoile filante, une toutes les 11 s
+      const ph = (now % 11000) / 11000;
+      if (ph < 0.09) {
+        const k = ph / 0.09;
+        const sx = 60 + k * 380, sy = 34 + k * 86;
+        for (let i = 0; i < 15; i++) {
+          s.setAlpha(a * (1 - k) * (i < 3 ? 0.95 : 0.5));
+          s.fillRect(sx - i * 2, sy - i, 2, 1, i < 3 ? 0xffffff : 0xbfe8ff);
+        }
+        s.setAlpha(1);
+      }
     }
-    // soleil / lune
-    const p = this.timeOfDay;
-    const dayPart = Math.min(p, 2); // 0..2 = matin→soir
-    const arc = (p <= 2 ? p / 2 : (p - 2) / 2);
+
+    // ── soleil / lune ──────────────────────────────────────
+    const arc = (this.timeOfDay <= 2 ? this.timeOfDay / 2 : (this.timeOfDay - 2) / 2);
     const cx = 60 + arc * (WORLD.w - 120);
     const cy = 150 - Math.sin(arc * Math.PI) * 108;
-    const isNight = p > 2;
-    if (isNight) {
+    if (this.timeOfDay > 2) {
+      for (let i = 3; i >= 0; i--) {                          // halo de lune
+        s.setAlpha(0.1);
+        s.circle(cx, cy, 9 + i * 3, 0xbfe8ff);
+      }
+      s.setAlpha(1);
       s.circle(cx, cy, 9, 0xf4f8ff);
-      s.circle(cx - 4, cy - 2, 8, mixInt(sky.top, sky.bot, 0.5));
-      s.setAlpha(0.5); s.ring(cx, cy, 13, 0xbfe8ff, 1); s.setAlpha(1);
+      s.circle(cx, cy - 1, 7, 0xffffff);
+      s.circle(cx - 3, cy - 3, 2, 0xdce8f6);                  // mers de la lune
+      s.circle(cx + 3, cy + 2, 2, 0xdce8f6);
+      s.px && s.px(cx + 1, cy + 4, 0xdce8f6);
     } else {
-      s.setAlpha(0.35); s.circle(cx, cy, 14, 0xffe9a0); s.setAlpha(1);
+      const warm = mixInt(sky.bot, 0xffe9a0, 0.6);
+      for (let i = 4; i >= 1; i--) {                          // couronne du soleil
+        s.setAlpha(0.09);
+        s.circle(cx, cy, 10 + i * 3, warm);
+      }
+      s.setAlpha(1);
       s.circle(cx, cy, 10, 0xfff6c4);
-      s.circle(cx - 2, cy - 2, 8, 0xffeead);
+      s.circle(cx - 2, cy - 2, 7, 0xffeead);
     }
   }
 
@@ -488,7 +580,7 @@ export class CityScene {
 
   /** Silhouettes lointaines qui poussent avec la ville (mode néon : néons). */
   drawSkyline(s, state, now, neon) {
-    const total = BUILDINGS.reduce((a, b) => a + (state.buildings[b.id] || 0), 0);
+    const total = BUILDINGS.reduce((a, b) => a + (b.id ? state.buildings[b.id] || 0 : 0), 0);
     if (total < 4) return;
     const r = mulberry(1234);
     const n = Math.min(26, 6 + Math.floor(total / 3));
@@ -499,60 +591,188 @@ export class CityScene {
       const w = 12 + Math.floor(r() * 18);
       const col = neon ? 0x2a1b4d : 0x1a2340;
       s.fillRect(x, 254 - h, w, h, col);
-      for (let wy = 0; wy < h - 4; wy += 5) {
-        for (let wx = 2; wx < w - 2; wx += 4) {
-          if ((i * 7 + wx + wy) % 11 < 4) s.fillRect(x + wx, 254 - h + 2 + wy, 2, 2, neon ? 0xff2fd0 : 0xffd166);
+      if (neon) s.fillRect(x, 254 - h, w, 1, 0xff2fd0);       // arête néon
+      for (let wy = 2; wy < h - 4; wy += 6) {
+        for (let wx = 2; wx < w - 2; wx += 5) {
+          if ((i * 7 + wx + wy) % 13 < 3) s.fillRect(x + wx, 254 - h + 2 + wy, 1, 2, neon ? 0xff2fd0 : 0xffd166);
         }
       }
     }
     s.setAlpha(1);
   }
 
+  /** Trottoir en pierre : arête claire, dalles, usure tramée. */
+  pavement(s, y, h, o = {}) {
+    s.fillRect(0, y, WORLD.w, h, 0x8a8f96);
+    ditherRect(s, 0, y, WORLD.w, h, 0x7e838a, 0.34);
+    if (o.top !== false) s.fillRect(0, y, WORLD.w, 1, 0xa9aeb5);
+    s.fillRect(0, y + h - 1, WORLD.w, 1, 0x6f747b);
+    for (let x = (o.off || 0); x < WORLD.w; x += 13) s.fillRect(x, y + 1, 1, Math.max(1, h - 2), 0x7a7f86);
+    const r = mulberry(501 + y);
+    for (let i = 0; i < 130; i++) {
+      s.fillRect(Math.floor(r() * WORLD.w), y + 1 + Math.floor(r() * Math.max(1, h - 2)), 1, 1,
+        r() < 0.5 ? 0x949aa1 : 0x82878e);
+    }
+    // herbes dans les interstices
+    if (o.weeds) {
+      const g = mulberry(902 + y);
+      for (let i = 0; i < 26; i++) {
+        const x = Math.floor(g() * WORLD.w);
+        s.fillRect(x, y - 1, 1, 2, g() < 0.5 ? 0x3d7a3f : 0x2b5230);
+      }
+    }
+  }
+
+  /** Asphalte : grain, rustines et traces d'usure. */
+  asphalt(s, y, h) {
+    s.fillRect(0, y, WORLD.w, h, 0x3a3f48);
+    ditherRect(s, 0, y, WORLD.w, h, 0x33383f, 0.42);
+    ditherRect(s, 0, y, WORLD.w, h, 0x454b55, 0.13, 1, 1);
+    const r = mulberry(77 + y);
+    for (let i = 0; i < 6; i++) {
+      const px = Math.floor(r() * WORLD.w), py = y + 1 + Math.floor(r() * (h - 4));
+      ditherRect(s, px, py, 6 + Math.floor(r() * 12), 2 + Math.floor(r() * 2), 0x2c3038, 0.55, i, i);
+    }
+  }
+
   drawGround(s, sky) {
-    // sol herbé avec dither
-    s.gradient(0, 254, WORLD.w, WORLD.h - 254, [[0, 0x3f7a3c], [0.35, 0x4f8f3a], [1, 0x2f5d33]]);
+    // herbe : dégradé en bandes tramées
+    paintVerticalGradient(s, 0, GROUND_Y, WORLD.w, WORLD.h - GROUND_Y, [
+      [0, 0x4f8f3a], [0.3, 0x3f7a3c], [0.7, 0x376e36], [1, 0x2a5330],
+    ], { levels: 7 });
     const r = mulberry(8);
-    for (let y = 254; y < WORLD.h; y += 1) {
-      for (let x = 0; x < WORLD.w; x += 1) {
+    for (let y = GROUND_Y; y < WORLD.h; y++) {
+      for (let x = 0; x < WORLD.w; x++) {
         const n = r();
-        if (n < 0.045) s.fillRect(x, y, 1, 1, y % 2 ? 0x3d7a3f : 0x59a04a);
-        else if (n > 0.975) s.fillRect(x, y, 1, 1, 0x2b5230);
+        if (n < 0.03) s.fillRect(x, y, 1, 1, y % 2 ? 0x59a04a : 0x4f8f3a);
+        else if (n > 0.978) s.fillRect(x, y, 1, 1, 0x24502a);
+      }
+    }
+    // terre battue au pied des deux rangées de bâtiments
+    for (const gy of [BACK_GROUND, FRONT_GROUND]) {
+      ditherRect(s, 0, gy - 2, WORLD.w, 4, 0x6b5b3a, 0.8);
+      s.fillRect(0, gy - 3, WORLD.w, 1, 0x8a7448);
+      s.fillRect(0, gy + 1, WORLD.w, 1, 0x3a3222);
+      const g = mulberry(gy * 7 + 3);
+      for (let i = 0; i < 110; i++) {
+        const x = Math.floor(g() * WORLD.w);
+        s.fillRect(x, gy - 3 - Math.floor(g() * 3), 1, 2, g() < 0.5 ? 0x59a04a : 0x3d7a3f);
       }
     }
   }
 
   drawRoad(s, y, sky, dir) {
-    s.fillRect(0, y - 9, WORLD.w, 18, 0x3a3f48);
-    s.fillRect(0, y - 9, WORLD.w, 2, 0x4c525c);
-    s.fillRect(0, y + 7, WORLD.w, 2, 0x2c3038);
-    // trottoir
-    s.fillRect(0, y - 13, WORLD.w, 4, 0x8a8f96);
-    s.fillRect(0, y - 13, WORLD.w, 1, 0xa9aeb5);
-    s.fillRect(0, y + 9, WORLD.w, 3, 0x8a8f96);
-    // marquage
-    for (let x = 4; x < WORLD.w; x += 22) s.fillRect(x, y, 12, 2, 0xd8c88a);
+    this.pavement(s, y - 13, 4);
+    this.asphalt(s, y - 9, 18);
+    s.fillRect(0, y - 9, WORLD.w, 1, 0x4c525c);
+    s.fillRect(0, y + 8, WORLD.w, 1, 0x2c3038);
+    // traces de roues
+    ditherRect(s, 0, y - 6, WORLD.w, 3, 0x32373f, 0.34);
+    ditherRect(s, 0, y + 3, WORLD.w, 3, 0x32373f, 0.34);
+    // lignes de rive
+    for (let x = 0; x < WORLD.w; x += 7) {
+      s.fillRect(x, y - 7, 4, 1, 0x6f747b);
+      s.fillRect(x + 3, y + 6, 4, 1, 0x6f747b);
+    }
+    // bouches d'égout
+    for (let x = 96; x < WORLD.w; x += 160) {
+      s.fillRect(x, y + 3, 7, 4, 0x2a2e35);
+      s.fillRect(x, y + 3, 7, 1, 0x454b55);
+      for (let i = 1; i < 6; i += 2) s.fillRect(x + i, y + 4, 1, 2, 0x1f2329);
+    }
+    // ligne centrale
+    for (let x = 4; x < WORLD.w; x += 22) s.fillRect(x, y, 12, 1, 0xd8c88a);
     // passages piétons
     for (let bx = 60; bx < WORLD.w; bx += 208) {
-      for (let i = 0; i < 5; i++) s.fillRect(bx + i * 3, y - 8, 2, 16, 0xe8e4d8);
+      for (let i = 0; i < 5; i++) {
+        s.fillRect(bx + i * 3, y - 8, 2, 16, 0xe8e4d8);
+        ditherRect(s, bx + i * 3, y - 8, 2, 16, 0xbfbcb0, 0.22, i, 1);
+      }
+      ditherRect(s, bx - 2, y - 8, 20, 16, 0xffffff, 0.12, bx, y);
+    }
+    // flaques qui reflètent le ciel (la nuit)
+    if (sky.star > 0.45) {
+      const r = mulberry(303 + y);
+      for (let i = 0; i < 5; i++) {
+        const pw = 10 + Math.floor(r() * 18), ph = 2 + Math.floor(r() * 2);
+        const px = 20 + Math.floor(r() * (WORLD.w - 60)), py = y - 7 + Math.floor(r() * 10);
+        ditherRect(s, px, py, pw, ph, mixInt(sky.bot, 0x6be3ff, 0.3), 0.75, i, y);
+        s.setAlpha(0.45);
+        s.fillRect(px + 2, py, Math.max(2, pw - 4), 1, 0xbfe8ff);
+        s.setAlpha(1);
+      }
     }
   }
 
   drawMidStrip(s, sky) {
-    s.fillRect(0, 282, WORLD.w, 44, 0x3f7a3c);
-    s.fillRect(0, 282, WORLD.w, 2, 0x4f8f3a);
+    // pelouse centrale
+    paintVerticalGradient(s, 0, 287, WORLD.w, 30, [
+      [0, 0x4f8f3a], [0.45, 0x3f7a3c], [1, 0x357033],
+    ], { levels: 5 });
     const r = mulberry(21);
-    for (let i = 0; i < 220; i++) {
-      const x = Math.floor(r() * WORLD.w), y = 284 + Math.floor(r() * 38);
+    for (let i = 0; i < 340; i++) {
+      const x = Math.floor(r() * WORLD.w), y = 288 + Math.floor(r() * 28);
       s.fillRect(x, y, 1, 1, r() < 0.5 ? 0x59a04a : 0x2b5230);
+    }
+    // sentier de terre qui serpente
+    for (let x = 0; x < WORLD.w; x++) {
+      const yy = 300 + Math.round(Math.sin(x * 0.019) * 2);
+      ditherRect(s, x, yy, 1, 3, 0x8a7448, 0.5, x, 2);
+      s.fillRect(x, yy + 3, 1, 1, 0x6b5b3a);
+    }
+    // trottoirs des deux rangées
+    this.pavement(s, 282, 6, { weeds: true });
+    this.pavement(s, 317, 5, { off: 6, weeds: true });
+    // herbes folles le long des trottoirs
+    const g = mulberry(55);
+    for (let i = 0; i < 80; i++) {
+      const x = Math.floor(g() * WORLD.w);
+      s.fillRect(x, 288 + Math.floor(g() * 2), 1, 2, 0x3d7a3f);
+      s.fillRect(x, 315 - Math.floor(g() * 2), 1, 2, 0x2b5230);
     }
   }
 
   drawForeground(s, sky) {
     const y = FRONT_GROUND + 21;
-    s.fillRect(0, y, WORLD.w, WORLD.h - y, 0x6f6a5f);
-    s.fillRect(0, y, WORLD.w, 2, 0x8a8477);
-    for (let x = 0; x < WORLD.w; x += 16) s.fillRect(x, y + 2, 1, WORLD.h - y - 2, 0x5c574d);
-    for (let x = 8; x < WORLD.w; x += 32) s.fillRect(x, y + 7, 22, 1, 0x5c574d);
+    const h = WORLD.h - y;
+    // bord de trottoir + caniveau
+    s.fillRect(0, y, WORLD.w, 2, 0xa9aeb5);
+    s.fillRect(0, y + 2, WORLD.w, 1, 0x6f747b);
+    ditherRect(s, 0, y + 3, WORLD.w, h - 3, 0x6f6a5f, 0.5);
+    s.fillRect(0, y + 3, WORLD.w, h - 3, 0x6f6a5f);
+    ditherRect(s, 0, y + 3, WORLD.w, h - 3, 0x5c574d, 0.35);
+    ditherRect(s, 0, y + 3, WORLD.w, h - 3, 0x7d7768, 0.18, 1, 1);
+    // pavés : deux rangées décalées
+    for (let row = 0; row * 5 < h; row++) {
+      const py = y + 4 + row * 5;
+      if (py + 2 > WORLD.h) break;
+      s.fillRect(0, py, WORLD.w, 1, row % 2 ? 0x5c574d : 0x655f54);
+      for (let x = (row % 2 ? 9 : 0); x < WORLD.w; x += 18) s.fillRect(x, py + 1, 1, 3, 0x5c574d);
+    }
+    // grains, miettes et fissures
+    const r = mulberry(404);
+    for (let i = 0; i < 420; i++) {
+      s.fillRect(Math.floor(r() * WORLD.w), y + 4 + Math.floor(r() * (h - 5)), 1, 1, r() < 0.5 ? 0x827a68 : 0x4f4a41);
+    }
+    const g = mulberry(77);
+    for (let i = 0; i < 16; i++) {
+      const x = Math.floor(g() * WORLD.w);
+      s.fillRect(x, y + 3, 1, 2 + Math.floor(g() * 2), 0x3d7a3f);
+      s.fillRect(x + 1, y + 3, 1, 1, 0x59a04a);
+    }
+    // caniveau : grille et bouche
+    for (let x = 40; x < WORLD.w; x += 128) {
+      s.fillRect(x, y + 3, 9, 3, 0x3a3833);
+      for (let i = 1; i < 9; i += 2) s.fillRect(x + i, y + 3, 1, 3, 0x1f1e1b);
+      s.fillRect(x - 1, y + 3, 11, 1, 0x55524a);
+    }
+    // flaques du soir
+    if (sky.star > 0.35) {
+      const p = mulberry(808);
+      for (let i = 0; i < 6; i++) {
+        ditherRect(s, Math.floor(p() * WORLD.w), y + 5 + Math.floor(p() * (h - 8)), 8 + Math.floor(p() * 16), 2, mixInt(sky.bot, 0x6be3ff, sky.star > 0.7 ? 0.4 : 0.15), 0.8, i, i);
+      }
+    }
   }
 
   drawProp(s, p, variant, sky) {
@@ -578,47 +798,92 @@ export class CityScene {
     const colors = [0xd0504c, 0x3aa7a0, 0xffd166, 0x6a4bd0, 0xe8e4d8];
     const body = colors[c.pal % colors.length];
     const x = Math.round(c.x), y = Math.round(c.y);
+    const lit = sky.star > 0.45;
+    const head = c.dir > 0 ? 1 : -1;
+    // ombre portée tramée
+    ditherRect(s, x - 9, y + 2, 18, 2, 0x2b2e34, 0.55, x, y);
     if (c.kind === 'van') {
       s.fillRect(x - 9, y - 8, 18, 8, body);
-      s.fillRect(x - 9, y - 8, 18, 1, mixInt(body, 0xffffff, 0.3));
-      s.fillRect(x + 2, y - 11, 7, 4, mixInt(body, 0x000000, 0.15));
-      s.fillRect(x - 6, y - 7, 6, 3, 0x9fe8ff);
-      s.fillRect(x - 10, y - 4, 1, 2, 0xffe9a0);
+      s.fillRect(x - 9, y - 8, 18, 1, mixInt(body, 0xffffff, 0.35));
+      s.fillRect(x - 9, y - 4, 18, 1, mixInt(body, 0x000000, 0.22));
+      s.fillRect(x + head * 2 - (head > 0 ? 0 : 6), y - 11, 7, 4, mixInt(body, 0xffffff, 0.18));
+      s.fillRect(x - 6, y - 7, 6, 3, lit ? 0x9fe8ff : 0xcfe6f2);
+      s.fillRect(x - 6, y - 7, 6, 1, 0xe8f6ff);
+      s.fillRect(x + head * 8 - (head > 0 ? 0 : 1), y - 5, 2, 2, lit ? 0xfff0b0 : 0xffe9a0);
     } else {
       s.fillRect(x - 8, y - 5, 16, 5, body);
+      s.fillRect(x - 8, y - 5, 16, 1, mixInt(body, 0xffffff, 0.4));
+      s.fillRect(x - 8, y - 2, 16, 1, mixInt(body, 0x000000, 0.25));
       s.fillRect(x - 4, y - 8, 9, 3, mixInt(body, 0xffffff, 0.15));
-      s.fillRect(x - 3, y - 8, 4, 3, 0x9fe8ff);
-      s.fillRect(x + 2, y - 8, 3, 3, 0x9fe8ff);
-      s.fillRect(x - 8, y - 5, 16, 1, mixInt(body, 0xffffff, 0.35));
-      s.fillRect(x + (c.dir > 0 ? 8 : -9), y - 4, 1, 2, 0xffe9a0);
+      s.fillRect(x - 3, y - 8, 4, 3, lit ? 0x9fe8ff : 0xd6ecf7);
+      s.fillRect(x + 2, y - 8, 3, 3, lit ? 0x9fe8ff : 0xd6ecf7);
+      s.fillRect(x - 3, y - 8, 4, 1, 0xf2fbff);
+      s.fillRect(x + head * 8 - (head > 0 ? 1 : 0), y - 5, 2, 2, lit ? 0xfff0b0 : 0xffe9a0);
     }
-    s.fillRect(x - 6, y, 3, 3, 0x1a1d22);
-    s.fillRect(x + 3, y, 3, 3, 0x1a1d22);
-    s.fillRect(x - 6, y, 3, 1, 0x50555c);
-    s.fillRect(x + 3, y, 3, 1, 0x50555c);
+    if (lit) {
+      // faisceau des phares dans la nuit
+      for (let i = 1; i <= 5; i++) {
+        s.setAlpha(0.13);
+        s.fillRect(x + head * (8 + i) - (head > 0 ? 0 : 1), y - 4, 2, 3, 0xfff0b0);
+      }
+      s.setAlpha(1);
+    }
+    // roues + enjoliveurs
+    for (const wx of [x - 6, x + 3]) {
+      s.fillRect(wx, y, 3, 3, 0x1a1d22);
+      s.fillRect(wx, y, 3, 1, 0x50555c);
+      s.fillRect(wx + 1, y + 1, 1, 1, 0x6f747b);
+    }
   }
 
   drawTaxi(s, tx, now) {
     const bob = Math.round(Math.sin(tx.bob * 6) * 1);
     const x = Math.round(tx.x), y = Math.round(tx.y) + bob;
-    for (let i = 0; i < 4; i++) { s.setAlpha(0.05 + i * 0.03); s.circle(x, y + 2, 14 - i * 2.5, 0xffd166); }
+    const body = 0xffd166, dark = 0xd8a520, cream = 0xfff6c4;
+    // halo doré tramé (remplace les cercles pleins)
+    for (let i = 0; i < 4; i++) {
+      const rx = 15 - i * 3, ry = 6 - i;
+      for (let dx = -rx; dx <= rx; dx++) {
+        const t = Math.abs(dx) / rx;
+        const hy = Math.round(ry * Math.sqrt(Math.max(0, 1 - t * t)));
+        for (let dy = -hy; dy <= hy; dy++) {
+          if (((dx + dy) & 1)) continue;
+          s.setAlpha(0.06);
+          s.fillRect(x + dx, y + dy + 2 + i, 1, 1, 0xffd166);
+        }
+      }
+    }
     s.setAlpha(1);
-    const body = 0xffd166, dark = 0xd8a520;
+    ditherRect(s, x - 9, y + 2, 18, 2, 0x2b2e34, 0.55, x, y);
+    // carrosserie dorée
     s.fillRect(x - 8, y - 5, 16, 5, body);
+    s.fillRect(x - 8, y - 5, 16, 1, 0xffe9a0);
     s.fillRect(x - 4, y - 8, 9, 3, body);
-    s.fillRect(x - 3, y - 8, 4, 3, 0xfff6c4);
-    s.fillRect(x + 2, y - 8, 3, 3, 0xfff6c4);
-    s.fillRect(x - 8, y - 1, 16, 1, dark);
+    s.fillRect(x - 3, y - 8, 4, 3, cream);
+    s.fillRect(x + 2, y - 8, 3, 3, cream);
+    s.fillRect(x - 3, y - 8, 4, 1, 0xffffff);
+    s.fillRect(x - 8, y - 2, 16, 1, dark);
+    // bande à damier
+    for (let i = 0; i < 8; i++) {
+      if (i % 2) continue;
+      s.fillRect(x - 8 + i * 2, y - 4, 1, 1, 0x1a1d22);
+      s.fillRect(x - 8 + i * 2 + 1, y - 3, 1, 1, 0x1a1d22);
+    }
+    // enseigne de toit + girophare
     s.fillRect(x - 2, y - 10, 5, 2, 0x1a1d22);
-    s.fillRect(x - 6, y, 3, 3, 0x1a1d22);
-    s.fillRect(x + 3, y, 3, 3, 0x1a1d22);
-    // girophare
-    s.fillRect(x - 1, y - 12, 3, 2, (Math.floor(now / 160) % 2) ? 0x6be3ff : 0xff4d6d);
+    s.fillRect(x - 1, y - 10, 3, 1, 0xfff6c4);
+    s.fillRect(x - 1, y - 13, 3, 2, (Math.floor(now / 160) % 2) ? 0x6be3ff : 0xff4d6d);
+    s.px && s.px(x - 1, y - 14, 0xfff6c4);
+    for (const wx of [x - 6, x + 3]) {
+      s.fillRect(wx, y, 3, 3, 0x1a1d22);
+      s.fillRect(wx, y, 3, 1, 0x50555c);
+      s.fillRect(wx + 1, y + 1, 1, 1, 0xffd166);
+    }
     // « ! » au-dessus
-    const yy = y - 20 + Math.round(Math.sin(now / 180) * 2);
+    const yy = y - 22 + Math.round(Math.sin(now / 180) * 2);
     s.setAlpha(0.9);
-    s.fillRect(x + 6, yy, 2, 8, 0xfff6c4);
-    s.fillRect(x + 6, yy + 10, 2, 3, 0xfff6c4);
+    s.fillRect(x + 7, yy, 2, 8, 0xfff6c4);
+    s.fillRect(x + 7, yy + 10, 2, 3, 0xfff6c4);
     s.setAlpha(1);
   }
 
@@ -653,41 +918,66 @@ export class CityScene {
   drawBubble(s, b, now) {
     const bob = Math.sin(now / 260 + b.x) * 3;
     const x = Math.round(b.x), y = Math.round(b.y + bob);
-    const scale = 1 + Math.sin(now / 180) * 0.06;
     const glow = b.kind === 'gem' ? 0xff55cc : b.kind === 'coin' ? 0xffd166 : 0x6be3ff;
-    const pulse = 0.5 + 0.5 * Math.sin(now / 220);
-    for (let i = 0; i < 5; i++) {
-      s.setAlpha(0.045 + 0.03 * pulse + i * 0.02);
-      s.circle(x, y, (13 - i * 1.6) * scale, glow);
+    const pulse = Math.floor((0.5 + 0.5 * Math.sin(now / 220)) * 3);
+    // halo tramé (motif de Bayer) : un vrai « glow » pixel-art
+    for (let r = 14; r >= 9; r--) {
+      const a = (14 - r) * 0.05 + 0.08 + pulse * 0.03;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r * r || d2 < (r - 1) * (r - 1)) continue;
+          const th = (BAYER4[((y + dy) & 3) * 4 + ((x + dx) & 3)] + 0.5) / 16;
+          if (th > a) continue;
+          s.setAlpha(0.55);
+          s.fillRect(x + dx, y + dy, 1, 1, glow);
+        }
+      }
     }
     s.setAlpha(1);
-    // halo
-    s.ring(x, y, 10, 0xfff6c4, 1);
-    s.ring(x, y, 11, 0x000000, 1);
+    // anneau d'ancrage
+    for (let i = 0; i < 28; i++) {
+      const ang = (i / 28) * Math.PI * 2 + now / 900;
+      s.fillRect(x + Math.round(Math.cos(ang) * 10), y + Math.round(Math.sin(ang) * 6), 1, 1, 0xfff6c4);
+    }
     if (b.kind === 'coin') {
+      s.circle(x, y, 8, 0xd8a520);
       s.circle(x, y, 7, 0xffd166);
       s.circle(x, y - 1, 6, 0xffe9a0);
-      s.fillRect(x - 4, y - 1, 8, 1, 0xd8a520);
+      s.fillRect(x - 4, y - 5, 3, 1, 0xfff6c4);
+      s.fillRect(x - 5, y - 4, 1, 2, 0xfff6c4);
       s.fillRect(x - 1, y - 4, 2, 8, 0xd8a520);
-      s.fillRect(x - 3, y - 4, 1, 2, 0xfff6c4);
+      s.fillRect(x - 3, y - 2, 6, 1, 0xd8a520);
+      s.fillRect(x - 3, y + 1, 6, 1, 0xd8a520);
+      s.fillRect(x - 1, y - 4, 1, 8, 0x8a6a12);
+      // éclat qui tourne
+      const k = Math.floor(now / 420) % 4;
+      const sx = x + (k === 0 ? 5 : k === 1 ? 3 : k === 2 ? -5 : -3);
+      const sy2 = y + (k === 0 ? -5 : k === 1 ? 5 : k === 2 ? -3 : 5);
+      s.fillRect(sx, sy2 - 2, 1, 5, 0xffffff);
+      s.fillRect(sx - 2, sy2, 5, 1, 0xffffff);
     } else if (b.kind === 'gem') {
-      s.fillRect(x - 1, y - 7, 3, 2, 0xb06bff);
+      s.fillRect(x - 1, y - 8, 3, 2, 0xb06bff);
       for (let i = 0; i < 7; i++) {
         const w = 9 - Math.abs(i - 3) * 2;
-        s.fillRect(x - Math.floor(w / 2), y - 5 + i, w, 1, i < 2 ? 0xff8fe0 : i < 5 ? 0xff55cc : 0xc020a0);
+        s.fillRect(x - Math.floor(w / 2), y - 6 + i, w, 1, i < 2 ? 0xff8fe0 : i < 5 ? 0xff55cc : 0xc020a0);
       }
-      s.fillRect(x - 2, y - 4, 1, 1, 0xfff0ff);
+      s.fillRect(x - 2, y - 5, 2, 3, 0xfff0ff);
+      s.fillRect(x - 1, y + 1, 3, 2, 0xffb4ec);
+      s.fillRect(x + 1, y - 6, 1, 2, 0xffffff);
     } else {
-      s.fillRect(x - 2, y - 7, 5, 8, 0xffffff);
-      s.fillRect(x - 1, y - 11, 3, 4, 0xffffff);
-      s.fillRect(x - 1, y - 9, 3, 3, 0x6be3ff);
-      s.fillRect(x - 2, y + 2, 2, 3, 0xff9f43);
-      s.fillRect(x + 1, y + 2, 2, 3, 0xff9f43);
-      s.fillRect(x - 1, y + 2, 2, 4, 0xffd166);
+      s.fillRect(x - 3, y - 6, 6, 9, 0xf4f8ff);
+      s.fillRect(x - 2, y - 9, 4, 4, 0xf4f8ff);
+      s.fillRect(x - 1, y - 8, 2, 3, 0x6be3ff);
+      s.fillRect(x - 3, y - 6, 1, 9, 0xc3d6e8);
+      s.fillRect(x + 2, y - 5, 1, 7, 0xc3d6e8);
+      s.fillRect(x - 2, y + 3, 2, 3, 0xff9f43);
+      s.fillRect(x + 1, y + 3, 2, 3, 0xff9f43);
+      s.fillRect(x - 1, y + 3, 2, 4, 0xffd166);
+      s.fillRect(x - 1, y - 7, 1, 2, 0xffffff);
     }
   }
 
-  /** Parcelle : bâtiment(s), lot vide, badge de compteur. */
   drawPlot(s, plot, state, variant, neon, sky) {
     const n = state.buildings[plot.def.id] || 0;
     if (n <= 0) { this.drawEmptyLot(s, plot, state, sky); return; }
@@ -749,39 +1039,70 @@ export class CityScene {
 
   drawEmptyLot(s, plot, state, sky) {
     const gy = plot.ground;
-    const w = 46, h = 12;
-    // terrain vague
-    s.fillRect(plot.x - w / 2, gy - h + 3, w, h, 0x6b5b3a);
-    s.fillRect(plot.x - w / 2, gy - h + 3, w, 1, 0x8a7448);
+    const w = 46, h = 11;
+    const x0 = plot.x - w / 2;
+    const top = gy - h;
+    const night = sky.star > 0.45;
     const r = mulberry(plot.index * 31 + 4);
-    for (let i = 0; i < 14; i++) s.fillRect(plot.x - w / 2 + r() * w, gy - h + 4 + r() * (h - 2), 2, 1, 0x574827);
-    // barrière en bois
-    for (let i = 0; i < 5; i++) {
-      const x = plot.x - w / 2 - 2 + i * 12;
-      s.fillRect(x, gy - h - 3, 2, 8, 0x9a6b3a);
+    // terrain vague : terre + bordure tramée
+    s.fillRect(x0, top + 2, w, h - 2, 0x6b5b3a);
+    ditherRect(s, x0, top + 2, w, h - 2, 0x574827, 0.35, plot.index, plot.index);
+    s.fillRect(x0, top + 2, w, 1, 0x8a7448);
+    s.fillRect(x0, gy, w, 1, 0x3a3222);
+    for (let i = 0; i < 16; i++) {
+      s.fillRect(x0 + Math.floor(r() * w), top + 3 + Math.floor(r() * (h - 3)), 1 + Math.floor(r() * 2), 1,
+        r() < 0.5 ? 0x8a7448 : 0x4a3d22);
     }
-    s.fillRect(plot.x - w / 2 - 3, gy - h - 1, w + 6, 2, 0xb98a4a);
-    s.fillRect(plot.x - w / 2 - 3, gy - h - 5, w + 6, 2, 0xb98a4a);
-    // numéro de parcelle (repère de construction)
-    s.fillRect(plot.x - 4, gy - h - 20, 8, 7, 0x1b2340);
-    s.fillRect(plot.x - 4, gy - h - 20, 8, 1, 0x3d4a7a);
-    s.text(String(plot.index + 1), plot.x, gy - h - 19, { size: 9, color: 0x9fb0d0, align: 'center', font: 'VT323, monospace' });
-    // panneau « à bâtir »
-    s.fillRect(plot.x - 5, gy - h - 16, 10, 8, 0xd8c88a);
-    s.fillRect(plot.x - 4, gy - h - 15, 8, 6, 0xf4e8c4);
-    s.fillRect(plot.x - 2, gy - h - 14, 4, 1, 0x8a7448);
-    s.fillRect(plot.x - 2, gy - h - 12, 4, 1, 0x8a7448);
-    s.fillRect(plot.x - 1, gy - h - 8, 2, 6, 0x9a6b3a);
+    // herbes folles
+    for (let i = 0; i < 9; i++) {
+      const gx = x0 + 2 + Math.floor(r() * (w - 4));
+      s.fillRect(gx, top + 1, 1, 2, 0x3d7a3f);
+      s.fillRect(gx, top, 1, 1, 0x59a04a);
+    }
+    // barrière : poteaux fins + deux lisses + grillage tramé
+    for (let x = x0 - 2; x < x0 + w + 3; x += 8) s.fillRect(x, top - 6, 1, 8, 0x9a6b3a);
+    s.fillRect(x0 - 3, top - 6, w + 6, 1, 0xb98a4a);
+    s.fillRect(x0 - 3, top - 3, w + 6, 1, 0xa97c42);
+    ditherRect(s, x0 - 3, top - 5, w + 6, 2, 0x6b5b3a, 0.4, plot.index, 1);
+    // matériaux de chantier
+    s.fillRect(x0 + 3, top + 5, 7, 3, 0x9a6b3a);      // planches
+    s.fillRect(x0 + 3, top + 5, 7, 1, 0xb98a4a);
+    s.fillRect(x0 + 12, top + 4, 8, 4, 0x8a8f96);      // parpaings
+    ditherRect(s, x0 + 12, top + 4, 8, 4, 0x6f747b, 0.3);
+    s.fillRect(x0 + 22, top + 5, 9, 3, 0x9aa7b8);      // tuyaux
+    s.fillRect(x0 + 22, top + 5, 9, 1, 0xc7d2e0);
+    ditherRect(s, x0 + 32, top + 5, 9, 4, 0xd8c88a, 0.55);   // tas de sable
+    s.fillRect(x0 + 33, top + 4, 7, 1, 0xf4e8c4);
+    // barrière de chantier rayée
+    const bx = x0 + w - 12, byy = top + 1;
+    s.fillRect(bx, byy, 11, 3, 0xe8e4d8);
+    for (let i = 0; i < 11; i += 4) {
+      s.fillRect(bx + i, byy, 2, 3, 0xd0504c);
+      s.fillRect(bx + i + 1, byy + 1, 1, 1, 0xd0504c);
+    }
+    s.fillRect(bx + 1, byy + 3, 1, 2, 0x6f747b);
+    s.fillRect(bx + 9, byy + 3, 1, 2, 0x6f747b);
+    // plaque de parcelle, plantée sur la barrière
+    const sy = gy - h - 15;
+    s.fillRect(plot.x - 7, sy + 8, 1, 5, 0x7d5227);
+    s.fillRect(plot.x + 6, sy + 8, 1, 5, 0x7d5227);
+    s.fillRect(plot.x - 8, sy, 16, 9, 0x1b2340);
+    s.fillRect(plot.x - 7, sy + 1, 14, 7, 0x232c4f);
+    s.fillRect(plot.x - 8, sy, 16, 1, 0x3d4a7a);
+    s.fillRect(plot.x - 7, sy + 1, 6, 2, 0xd0504c);
+    s.text(String(plot.index + 1), plot.x, sy + 2, { size: 10, color: 0xffd166, align: 'center', font: 'VT323, monospace' });
+    if (night) s.fillRect(plot.x - 8, sy + 8, 16, 1, 0x6be3ff);
     // progression de déblocage
     const missing = Math.max(0, plot.def.unlock - state.lifetime);
     if (missing > 0) {
       const k = Math.max(0, Math.min(1, state.lifetime / plot.def.unlock));
       const pw = 40;
-      s.setAlpha(0.75);
-      s.fillRect(plot.x - pw / 2, gy + 4, pw, 5, 0x11162a);
+      s.setAlpha(0.8);
+      s.fillRect(plot.x - pw / 2, gy + 4, pw, 6, 0x11162a);
       s.setAlpha(1);
-      s.fillRect(plot.x - pw / 2 + 1, gy + 5, Math.max(1, Math.round((pw - 2) * k)), 3, 0x6be3ff);
-      s.text('?', plot.x, gy + 11, { size: 10, color: 0x9fb0d0, align: 'center', font: 'VT323, monospace' });
+      s.fillRect(plot.x - pw / 2 + 1, gy + 5, Math.max(1, Math.round((pw - 2) * k)), 4, 0x6be3ff);
+      ditherRect(s, plot.x - pw / 2 + 1, gy + 5, Math.max(1, Math.round((pw - 2) * k)), 4, 0xbfe8ff, 0.3, 1, 1);
+      s.text('?', plot.x, gy + 3, { size: 10, color: 0x9fb0d0, align: 'center', font: 'VT323, monospace' });
     }
   }
 

@@ -5,22 +5,23 @@
 //  (Node) pour vérification.
 // ─────────────────────────────────────────────────────────────
 import { FB, hex, rgba, shade, mixColor } from './fb.js';
+import { BAYER4 } from './surface.js';
 import { mulberry32 } from '../core/format.js';
 
 /** Recette graphique de chaque bâtiment. */
 export const ART = {
-  cabane: { style: 'house', w: 26, floors: 1, floorH: 7, floorGain: 0.4, wGain: 1, roof: 'gable', chimney: true },
-  epicerie: { style: 'shop', w: 32, floors: 1, floorH: 9, floorGain: 0.5, wGain: 1, roof: 'awning', sign: true, awning: true },
-  cafe: { style: 'shop', w: 34, floors: 1, floorH: 10, floorGain: 0.5, wGain: 1, roof: 'awning', sign: true, awning: true, chim: true },
-  immeuble: { style: 'tower', w: 28, floors: 3, floorH: 8, floorGain: 1, wGain: 0.5, roof: 'flat', balconies: true },
-  cinema: { style: 'hall', w: 42, floors: 1, floorH: 16, floorGain: 0.4, wGain: 1.5, roof: 'marquee', marquee: true },
-  centre: { style: 'hall', w: 50, floors: 2, floorH: 11, floorGain: 0.6, wGain: 2, roof: 'glass', glass: true },
-  hopital: { style: 'hall', w: 38, floors: 2, floorH: 11, floorGain: 0.5, wGain: 1.5, roof: 'flat', cross: true },
-  bureaux: { style: 'tower', w: 34, floors: 5, floorH: 9, floorGain: 1, wGain: 1, roof: 'flatGlass', glass: true, antenna: true },
-  gratteciel: { style: 'tower', w: 38, floors: 8, floorH: 9, floorGain: 1.4, wGain: 1, roof: 'spire', glass: true, antenna: true },
-  parc: { style: 'wheel', w: 62, floors: 0, floorH: 0, floorGain: 0, wGain: 2, roof: 'none' },
-  gare: { style: 'rocket', w: 50, floors: 1, floorH: 13, floorGain: 0.3, wGain: 1, roof: 'dome' },
-  quantique: { style: 'quantum', w: 46, floors: 4, floorH: 9, floorGain: 0.8, wGain: 1, roof: 'ring' },
+  cabane: { style: 'house', w: 26, floors: 1, floorH: 7, floorGain: 0.5, wGain: 0.8, roof: 'gable', chimney: true },
+  epicerie: { style: 'shop', w: 30, floors: 1, floorH: 9, floorGain: 0.85, wGain: 0.5, roof: 'awning', sign: true, awning: true },
+  cafe: { style: 'shop', w: 32, floors: 1, floorH: 10, floorGain: 0.85, wGain: 0.5, roof: 'awning', sign: true, awning: true, chim: true },
+  immeuble: { style: 'tower', w: 28, floors: 3, floorH: 8, floorGain: 1.1, wGain: 0.4, roof: 'flat', balconies: true },
+  cinema: { style: 'hall', w: 40, floors: 1, floorH: 16, floorGain: 0.8, wGain: 0.7, roof: 'marquee', marquee: true },
+  centre: { style: 'hall', w: 46, floors: 2, floorH: 11, floorGain: 0.9, wGain: 0.9, roof: 'glass', glass: true },
+  hopital: { style: 'hall', w: 36, floors: 2, floorH: 11, floorGain: 0.9, wGain: 0.6, roof: 'flat', cross: true },
+  bureaux: { style: 'tower', w: 34, floors: 5, floorH: 9, floorGain: 1.1, wGain: 0.6, roof: 'flatGlass', glass: true, antenna: true },
+  gratteciel: { style: 'tower', w: 38, floors: 8, floorH: 9, floorGain: 1.5, wGain: 0.7, roof: 'spire', glass: true, antenna: true },
+  parc: { style: 'wheel', w: 62, floors: 0, floorH: 0, floorGain: 0, wGain: 1.2, roof: 'none' },
+  gare: { style: 'rocket', w: 50, floors: 1, floorH: 13, floorGain: 0.4, wGain: 0.6, roof: 'dome' },
+  quantique: { style: 'quantum', w: 46, floors: 4, floorH: 9, floorGain: 1, wGain: 0.6, roof: 'ring' },
 };
 
 const SHADOW = rgba(0, 0, 0, 70);
@@ -88,7 +89,53 @@ export function drawBuilding(def, tier, variant = 0, neon = false) {
     case 'quantum': drawQuantum(ctx); break;
     default: drawHouse(ctx);
   }
+  outlineSilhouette(fb);
   if (neon) applyNeon(fb, size);
+  return fb;
+}
+
+/**
+ * Ajoute un contour sombre d'un pixel autour de la silhouette.
+ * C'est ce qui fait « claquer » un sprite pixel-art sur n'importe quel
+ * fond (et qui manquait cruellement aux bâtiments).
+ */
+export function outlineSilhouette(fb, colour = 0x0a0e1c) {
+  const src = fb.data.slice();
+  const c = hex(colour);
+  const solid = (i) => (src[i] >>> 24) >= 200;
+  for (let y = 0; y < fb.h; y++) {
+    const row = y * fb.w;
+    for (let x = 0; x < fb.w; x++) {
+      const i = row + x;
+      if (solid(i)) continue;
+      if ((y > 0 && solid(i - fb.w)) || (y < fb.h - 1 && solid(i + fb.w)) ||
+          (x > 0 && solid(i - 1)) || (x < fb.w - 1 && solid(i + 1))) {
+        fb.data[i] = c;
+      }
+    }
+  }
+  return fb;
+}
+
+/**
+ * Halo tramé (lampe, fenêtre, enseigne, phare…). Rendu une seule fois
+ * puis simplement étiré : un halo doux coûterait trop cher par image.
+ */
+export function drawGlow(radius, colour, power = 2.1) {
+  const d = radius * 2 + 1;
+  const fb = new FB(d, d);
+  const r = (colour >> 16) & 255, g = (colour >> 8) & 255, b = colour & 255;
+  for (let y = 0; y < d; y++) {
+    for (let x = 0; x < d; x++) {
+      const dx = x - radius, dy = y - radius;
+      const dist = Math.sqrt(dx * dx + dy * dy) / radius;
+      if (dist > 1) continue;
+      const a = Math.pow(1 - dist, power) * 0.85;
+      const th = (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+      if (a <= th) continue;
+      fb.data[y * d + x] = rgba(r, g, b, Math.round(Math.min(1, a) * 255));
+    }
+  }
   return fb;
 }
 
@@ -141,6 +188,7 @@ function shadow(ctx, w) {
 /** Grille de fenêtres. */
 function windows(ctx, x0, y0, cols, rows, cw, ch, gapx, gapy, variant, frame = true) {
   const { fb, pal } = ctx;
+  const darkGlass = mixColor(pal.dark, 0x0a1020, 0.55);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = x0 + c * (cw + gapx);
@@ -151,12 +199,34 @@ function windows(ctx, x0, y0, cols, rows, cw, ch, gapx, gapy, variant, frame = t
       if (inner.w <= 0 || inner.h <= 0) continue;
       if (on) {
         fb.rect(inner.x, inner.y, inner.w, inner.h, pal.win);
-        fb.rect(inner.x, inner.y, inner.w, 1, shade(pal.win, 0.12));
-        if (inner.h > 3) fb.rect(inner.x, inner.y + inner.h - 1, inner.w, 1, shade(pal.win, -0.25));
+        fb.rect(inner.x, inner.y, inner.w, 1, shade(pal.win, 0.14));
+        if (inner.h > 3) fb.rect(inner.x, inner.y + inner.h - 1, inner.w, 1, shade(pal.win, -0.28));
+        // silhouette derrière la vitre (donne de la profondeur)
+        if (inner.w > 5 && inner.h > 4) {
+          const sx = inner.x + 1 + Math.floor(ctx.rnd() * (inner.w - 3));
+          fb.rect(sx, inner.y + inner.h - 3, 2, 2, shade(pal.win, -0.45));
+          fb.rect(sx + 1, inner.y + inner.h - 4, 1, 2, shade(pal.win, -0.45));
+        }
       } else {
-        const dark = mixColor(pal.dark, 0x0a1020, 0.55);
-        fb.rect(inner.x, inner.y, inner.w, inner.h, dark);
-        fb.rect(inner.x, inner.y, inner.w, 1, shade(dark, 0.18));
+        fb.rect(inner.x, inner.y, inner.w, inner.h, darkGlass);
+        fb.rect(inner.x, inner.y, inner.w, 1, shade(darkGlass, 0.22));
+        // reflet en diagonale
+        if (inner.w > 4 && inner.h > 3) {
+          fb.rect(inner.x + 1, inner.y + 1, 1, 1, shade(darkGlass, 0.42));
+          fb.rect(inner.x + 2, inner.y + 1, 1, 1, shade(darkGlass, 0.3));
+        }
+      }
+      // stores / rideaux sur certaines fenêtres
+      const style = Math.floor(ctx.rnd() * 7);
+      if (style === 0 && inner.h > 3) {
+        fb.rect(inner.x, inner.y + 1, inner.w, 1, on ? shade(pal.win, -0.35) : shade(darkGlass, 0.3));
+      } else if (style === 1) {
+        fb.vline(inner.x, inner.y + 1, Math.max(1, inner.h - 2), on ? shade(pal.win, -0.4) : shade(darkGlass, 0.25));
+      } else if (style === 2 && cw >= 5 && ch >= 5) {
+        // climatiseur sous la fenêtre
+        fb.rect(x + Math.floor(cw / 2) - 2, y + ch, 4, 3, mixColor(pal.light, 0x8a8f96, 0.6));
+        fb.rect(x + Math.floor(cw / 2) - 2, y + ch + 2, 4, 1, shade(pal.dark, -0.1));
+        fb.px(x + Math.floor(cw / 2) - 1, y + ch + 1, shade(pal.dark, 0.2));
       }
     }
   }
@@ -173,6 +243,64 @@ function body(ctx, x, y, w, h) {
   fb.hline(x + 1, y + 1, w - 2, pal.light);
   // ombre côté droit
   fb.vline(x + w - 3, y + 2, h - 3, shade(pal.wall, -0.08));
+  // occlusion ambiante en pied de façade : pose le bâtiment au sol
+  if (h > 6) {
+    fb.hline(x + 1, y + h - 2, w - 2, shade(pal.wall, -0.16));
+    if (h > 10) fb.hline(x + 1, y + h - 3, w - 2, shade(pal.wall, -0.08));
+  }
+}
+
+/** Détails de toit : ça remplit le vide et raconte une ville vivante. */
+function roofDetails(ctx, bx, by, w, pal, opts = {}) {
+  const { fb, rnd, tier } = ctx;
+  const r = Math.floor(rnd() * 4);
+  const light = mixColor(pal.light, 0x8a8f96, 0.45);
+  const dark = shade(pal.dark, 0.1);
+
+  // petits blocs techniques (clim, gaines)
+  const n = 1 + Math.floor(rnd() * 2);
+  for (let i = 0; i < n; i++) {
+    const bw = 3 + Math.floor(rnd() * 3);
+    const bx2 = bx + 2 + Math.floor(rnd() * Math.max(1, w - bw - 4));
+    const bh = 2 + Math.floor(rnd() * 3);
+    fb.rect(bx2, by - bh, bw, bh, light);
+    fb.hline(bx2, by - bh, bw, shade(light, 0.18));
+    fb.hline(bx2, by - 1, bw, shade(pal.wall, -0.28));
+    if (bw >= 4) fb.rect(bx2 + 1, by - bh + 1, bw - 2, 1, shade(pal.dark, -0.1));
+  }
+  // évents / cheminées de ventilation
+  for (let i = 0; i < 2; i++) {
+    const vx = bx + 2 + Math.floor(rnd() * Math.max(1, w - 4));
+    fb.rect(vx, by - 3, 2, 3, shade(pal.dark, 0.2));
+    fb.px(vx, by - 4, shade(pal.dark, 0.4));
+  }
+  // château d'eau sur les toits plats des grandes tours
+  if (opts.water && tier >= 2 && w > 20) {
+    const wx = bx + w - 10;
+    fb.rect(wx + 1, by - 4, 1, 4, dark);
+    fb.rect(wx + 5, by - 4, 1, 4, dark);
+    fb.rect(wx, by - 9, 7, 5, mixColor(pal.wall, 0x9a7a52, 0.5));
+    fb.hline(wx, by - 9, 7, mixColor(pal.wall, 0xd8ab74, 0.5));
+    fb.hline(wx, by - 5, 7, shade(pal.dark, -0.1));
+    fb.rect(wx + 2, by - 10, 3, 1, shade(pal.dark, 0.3));
+  }
+  // jardin de toit sur les bâtiments paisibles
+  if (opts.garden && tier >= 3 && w > 18) {
+    const gx = bx + 3;
+    fb.rect(gx, by - 3, 10, 2, hex(0x3f7a3c));
+    fb.hline(gx, by - 3, 10, hex(0x59b95c));
+    for (let i = 0; i < 3; i++) {
+      const tx = gx + 1 + i * 3;
+      fb.rect(tx, by - 6, 1, 3, hex(0x6b4a2a));
+      fb.disk(tx, by - 7, 1, i % 2 ? hex(0x2f7a35) : hex(0x3f9c45));
+    }
+  }
+  // feu de balisage clignotant (animé par variante)
+  if (opts.beacon) {
+    const lx = bx + Math.floor(w / 2);
+    const on = (ctx.variant + 1) % 2 === 0;
+    fb.rect(lx, by - 2, 1, 1, on ? hex(0xff4d6d) : shade(pal.dark, 0.3));
+  }
 }
 
 function door(ctx, x, groundY, w, h) {
@@ -208,35 +336,58 @@ function drawHouse(ctx) {
   // Porte
   door(ctx, cx - 2, groundY, 5, 8);
 
-  // Toit
+  // ── Toit ────────────────────────────────────────────────
   const roofH = roofHeight(a, tier);
   const over = 3;
   if (a.roof === 'gable') {
+    const base = w + over * 2;
+    const halfBase = Math.floor(base / 2);
+    // cheminée d'abord : le toit recouvre sa base
+    if (a.chimney) {
+      const chx = bx + w - 8, chTop = by - roofH - 3;
+      fb.rect(chx, chTop, 3, 6, shade(pal.roof, -0.42));
+      fb.vline(chx, chTop, 6, shade(pal.roof, -0.28));
+      fb.hline(chx - 1, chTop, 5, shade(pal.roof, -0.55));
+      fb.hline(chx - 1, chTop - 1, 5, shade(pal.roof, -0.3));
+      fb.px(chx + 1, chTop - 3, rgba(196, 206, 226, 90));
+      fb.px(chx, chTop - 5, rgba(196, 206, 226, 55));
+    }
+    // versants : gauche éclairé, droit à l'ombre
     for (let i = 0; i < roofH; i++) {
-      const rw = Math.round((w + over * 2) * (1 - i / (roofH + 1.5)));
-      fb.hline(cx - Math.floor(rw / 2), by - roofH + i, rw, i === 0 ? pal.roof : (i % 2 ? pal.roof : shade(pal.roof, 0.06)));
+      const half = Math.max(2, Math.round(halfBase * ((i + 1) / roofH)));
+      const y = by - roofH + i;
+      fb.rect(cx - half, y, half, 1, pal.roof);
+      fb.rect(cx, y, half, 1, shade(pal.roof, -0.14));
+      if (i % 2) fb.hline(cx - half, y, half, shade(pal.roof, 0.1));
     }
-    fb.hline(cx - Math.floor((w + over * 2) / 2), by - 1, w + over * 2, shade(pal.roof, -0.3));
-    // tuiles
-    for (let i = 1; i < roofH; i += 2) {
-      const rw = Math.round((w + over * 2) * (1 - i / (roofH + 1.5)));
-      fb.hline(cx - Math.floor(rw / 2), by - roofH + i, rw, shade(pal.roof, -0.18));
-    }
+    // arête faîtière
+    const topHalf = Math.max(2, Math.round(halfBase / roofH));
+    fb.hline(cx - topHalf, by - roofH - 1, topHalf * 2, shade(pal.roof, 0.28));
+    fb.px(cx - topHalf - 1, by - roofH - 1, shade(pal.roof, 0.05));
+    fb.px(cx + topHalf, by - roofH - 1, shade(pal.roof, 0.05));
+    // égout et gouttière
+    fb.hline(cx - halfBase, by - 1, base, shade(pal.roof, 0.1));
+    fb.hline(cx - halfBase, by, halfBase, shade(pal.roof, -0.35));
+    fb.hline(cx, by, halfBase, shade(pal.roof, -0.45));
   } else if (a.roof === 'awning') {
     fb.rect(bx - over, by - 2, w + over * 2, 2, pal.roof);
     fb.hline(bx - over, by - 1, w + over * 2, shade(pal.roof, -0.3));
-  }
-  // Cheminée
-  if (a.chimney) {
-    const chx = bx + 3;
-    fb.rect(chx, by - roofH + 1, 4, 7, shade(pal.dark, 0.05));
-    fb.rect(chx, by - roofH + 1, 4, 1, pal.win);
   }
   // Plante / jardin
   if (tier >= 1) {
     fb.rect(bx - 3, groundY - 2, 3, 2, hex(0x4f8f3a));
     fb.rect(bx + w, groundY - 3, 3, 3, hex(0x3d7a2e));
     fb.px(bx + w + 1, groundY - 4, hex(0xd8f07a));
+  }
+  // lampe murale au-dessus de la porte (s'allume la nuit via le halo)
+  fb.rect(cx - 3, groundY - 11, 1, 1, pal.dark);
+  fb.px(cx - 4, groundY - 10, pal.win);
+  fb.px(cx - 2, groundY - 10, pal.win);
+  // oiseau posé sur le versant gauche
+  if (tier >= 2) {
+    fb.px(cx - 6, by - roofH - 1, shade(pal.dark, -0.2));
+    fb.rect(cx - 8, by - roofH, 3, 2, shade(pal.dark, -0.35));
+    fb.px(cx - 5, by - roofH - 1, shade(pal.dark, 0.05));
   }
 }
 
@@ -252,61 +403,91 @@ function drawShop(ctx) {
   shadow(ctx, w + 4);
   body(ctx, bx, by, w, bodyH);
 
-  // Grande vitrine au rez-de-chaussée
-  const winY = groundY - Math.min(9, a.floorH - 2);
-  fb.rect(bx + 2, winY, w - 4, groundY - winY - 1, mixColor(pal.win, 0x1a1208, 0.35));
-  fb.rect(bx + 2, winY, w - 4, 1, pal.dark);
-  fb.outline(bx + 2, winY, w - 4, groundY - winY - 1, pal.dark);
-  // silhouettes de produits
-  for (let i = 0; i < 3; i++) {
-    const px = bx + 5 + i * Math.floor((w - 10) / 3);
-    fb.rect(px, groundY - 5, 3, 3, i === 1 ? pal.accent : shade(pal.win, -0.4));
+  // ── rez-de-chaussée : grande vitrine ─────────────────────
+  const vitH = Math.min(a.floorH - 1, 8 + Math.min(tier, 3));
+  const vY = groundY - vitH - 1;
+  const vX = bx + 2, vW = w - 4;
+  // encadrement + verre chaud
+  fb.rect(vX, vY, vW, vitH, mixColor(pal.win, 0x2a1a08, 0.5));
+  fb.rect(vX + 1, vY + 1, vW - 2, vitH - 2, mixColor(pal.win, 0xc08a30, 0.35));
+  fb.rect(vX + 1, vY + 1, vW - 2, 1, shade(pal.win, 0.2));
+  // meneaux de la vitrine
+  const panes = Math.max(2, Math.floor(w / 11));
+  for (let i = 1; i < panes; i++) {
+    fb.vline(vX + Math.round((vW * i) / panes), vY + 1, vitH - 2, pal.dark);
   }
-  // étages supérieurs
+  fb.outline(vX - 1, vY - 1, vW + 2, vitH + 2, pal.dark);
+  // rayonnages et produits à l'intérieur
+  const shelfY = groundY - 3;
+  fb.rect(vX + 2, shelfY, vW - 4, 1, pal.dark);
+  for (let i = 0; i < Math.max(2, Math.floor((vW - 6) / 6)); i++) {
+    const px = vX + 3 + i * 6;
+    const kinds = [pal.accent, shade(pal.win, -0.3), hex(0xd0504c), hex(0x6bc47a)];
+    fb.rect(px, shelfY - 3, 3, 3, kinds[i % kinds.length]);
+    fb.px(px + 1, shelfY - 4, shade(kinds[i % kinds.length], 0.25));
+  }
+  // caisses et parking de livraison devant
+  fb.rect(vX + 1, groundY - 2, 4, 2, hex(0x9a6b3a));
+  fb.rect(vX + w - 6, groundY - 3, 4, 3, hex(0x8a5a30));
+  fb.px(vX + w - 5, groundY - 4, hex(0xd8c88a));
+
+  // ── auvent rayé, posé JUSTE au-dessus de la vitrine ──────
+  const awH = 4 + (tier >= 3 ? 1 : 0);
+  const awY = vY - awH - 1;
+  const awW = w + 4, awX = bx - 2;
+  for (let i = 0; i < awW; i++) {
+    const c = (Math.floor(i / 3) % 2) ? pal.accent : hex(0xf7f2e0);
+    fb.rect(awX + i, awY, 1, awH, c);
+  }
+  fb.hline(awX, awY, awW, shade(pal.accent, -0.25));
+  fb.hline(awX, awY + awH - 1, awW, shade(pal.dark, -0.05));
+  // festons qui pendent sous l'auvent
+  for (let i = 0; i < awW; i += 3) {
+    const c = (Math.floor(i / 3) % 2) ? shade(pal.accent, -0.15) : hex(0xdcd6c2);
+    fb.rect(awX + i, awY + awH, 2, 1, c);
+    fb.px(awX + i, awY + awH + 1, c);
+  }
+
+  // ── enseigne lumineuse au-dessus de l'auvent ─────────────
+  const sgH = 5;
+  const sgY = awY - sgH - 1;
+  fb.rect(bx + 1, sgY, w - 2, sgH, shade(pal.dark, 0.12));
+  fb.outline(bx + 1, sgY, w - 2, sgH, pal.dark);
+  const litC = mixColor(pal.win, 0xffffff, 0.2);
+  for (let i = 0; i < Math.floor((w - 6) / 3); i++) {
+    const on = (variant + i) % 3 !== 2;
+    fb.rect(bx + 3 + i * 3, sgY + 1, 2, sgH - 2, on ? litC : shade(pal.dark, 0.3));
+  }
+  fb.hline(bx + 1, sgY, w - 2, shade(pal.win, 0.15));
+
+  // ── étages supérieurs ───────────────────────────────────
   if (floors > 1) {
-    windows(ctx, bx + 4, by + 3, 3, floors - 1, 4, a.floorH - 5, 3, 3, variant);
+    const upY = by + 2;
+    const upH = sgY - by - 3;
+    const cols = Math.max(2, Math.floor((w - 6) / 9));
+    const cw = Math.max(4, Math.floor((w - 6 - (cols - 1) * 3) / cols));
+    windows(ctx, bx + 3, upY, cols, 1, cw, Math.max(5, Math.min(upH - 1, a.floorH - 4)), 3, 0, variant);
+    // bandeau de séparation
+    fb.hline(bx + 1, sgY - 2, w - 2, shade(pal.wall, -0.12));
   }
-  // Auvent rayé
-  if (a.awning) {
-    const aw = 4;
-    for (let i = 0; i < w; i++) {
-      const c = (Math.floor(i / 3) % 2) ? pal.accent : hex(0xf7f2e0);
-      fb.rect(bx + i, by + bodyH - 8, 1, aw, c);
-    }
-    fb.rect(bx - 2, by + bodyH - 8, w + 4, 1, shade(pal.accent, -0.2));
-    // festons
-    for (let i = 0; i < w + 4; i += 3) {
-      const c = (Math.floor(i / 3) % 2) ? shade(pal.accent, -0.15) : hex(0xdcd6c2);
-      fb.px(bx - 2 + i, by + bodyH - 4, c);
-      fb.px(bx - 1 + i, by + bodyH - 4, c);
-    }
-    fb.rect(bx - 2, by + bodyH - 12, w + 4, 2, pal.roof);
-    fb.hline(bx - 2, by + bodyH - 12, w + 4, shade(pal.roof, 0.15));
-  }
-  // Enseigne
-  if (a.sign) {
-    const sy = by - 1;
-    fb.rect(bx + 2, sy - 4, w - 4, 5, shade(pal.dark, 0.1));
-    fb.outline(bx + 2, sy - 4, w - 4, 5, pal.dark);
-    const litC = mixColor(pal.win, 0xffffff, 0.15);
-    for (let i = 0; i < Math.floor((w - 8) / 3); i++) {
-      fb.rect(bx + 4 + i * 3, sy - 3, 2, 3, litC);
-    }
-    if (tier >= 2) fb.rect(bx + 2, sy - 4, w - 4, 1, shade(pal.win, 0.2));
-  }
-  // Toit
-  if (a.roof === 'awning') {
-    fb.rect(bx - 2, by - 6, w + 4, 3, pal.roof);
-    fb.hline(bx - 2, by - 6, w + 4, shade(pal.roof, 0.2));
-    fb.hline(bx - 2, by - 4, w + 4, shade(pal.roof, -0.3));
-  }
+
+  // ── toit ────────────────────────────────────────────────
+  fb.rect(bx - 2, by - 5, w + 4, 4, pal.roof);
+  fb.hline(bx - 2, by - 5, w + 4, shade(pal.roof, 0.22));
+  fb.hline(bx - 2, by - 2, w + 4, shade(pal.roof, -0.3));
+  roofDetails(ctx, bx + 1, by - 5, w - 2, pal, { garden: tier >= 4 });
   if (a.chim) {
-    fb.rect(bx + w - 6, by - 9, 3, 5, shade(pal.dark, 0.1));
+    fb.rect(bx + w - 8, by - 10, 3, 6, shade(pal.dark, 0.12));
+    fb.hline(bx + w - 8, by - 10, 3, shade(pal.dark, 0.3));
   }
   if (tier >= 3) {
-    // enseigne lumineuse supplémentaire
-    fb.rect(bx + 2, by - 10, w - 4, 3, pal.accent);
-    fb.hline(bx + 2, by - 10, w - 4, shade(pal.accent, 0.3));
+    // bacs à fleurs suspendus sous les fenêtres du haut
+    for (let i = 0; i < 2; i++) {
+      const fx = bx + 4 + i * Math.max(8, w - 12);
+      fb.rect(fx, by + 1, 5, 2, hex(0x9a6b3a));
+      fb.px(fx + 1, by, hex(0xff4d6d));
+      fb.px(fx + 3, by, hex(0xffd166));
+    }
   }
 }
 
@@ -393,6 +574,20 @@ function drawTower(ctx) {
     fb.vline(bx2, by - rh - 4, 3, shade(pal.dark, 0.25));
     fb.px(bx2, by - rh - 5, variant === 0 ? hex(0xff4d6d) : pal.accent);
   }
+  roofDetails(ctx, bx + 1, by - 3, w - 2, pal, { water: true, beacon: true });
+  // entrée éclairée + auvent de porte
+  fb.rect(cx - 7, groundY - entH - 2, 14, 1, shade(pal.dark, 0.25));
+  fb.px(cx - 7, groundY - entH - 1, pal.win);
+  if (tier >= 2) {
+    // quelques voitures garées le long de la tour
+    for (let i = 0; i < 2; i++) {
+      const px2 = bx - 6 + i * (w + 8);
+      fb.rect(px2, groundY - 4, 7, 3, i % 2 ? hex(0x3aa7a0) : hex(0xd0504c));
+      fb.rect(px2 + 1, groundY - 6, 4, 2, hex(0x9fe8ff));
+      fb.rect(px2, groundY - 1, 2, 1, hex(0x1a1d22));
+      fb.rect(px2 + 5, groundY - 1, 2, 1, hex(0x1a1d22));
+    }
+  }
 }
 
 function drawHall(ctx) {
@@ -475,6 +670,14 @@ function drawHall(ctx) {
       fb.rect(bx + 6, by - 7, 8, 4, pal.accent);
       fb.rect(bx + w - 14, by - 7, 8, 4, pal.accent);
     }
+    roofDetails(ctx, bx + 2, by - 3, w - 4, pal, { garden: true, beacon: true });
+  }
+  // éclairage public devant le bâtiment
+  for (let i = 0; i < Math.max(1, Math.floor(w / 22)); i++) {
+    const lx2 = bx + 6 + i * 22;
+    fb.vline(lx2, groundY - 12, 11, shade(pal.dark, 0.15));
+    fb.rect(lx2 - 1, groundY - 15, 4, 3, shade(pal.dark, 0.05));
+    fb.rect(lx2, groundY - 14, 2, 1, pal.win);
   }
 }
 
@@ -571,27 +774,65 @@ function drawRocket(ctx) {
   const H = 20 + Math.min(tier, 4) * 3;
   const rw = 9;
   const top = by - H;
-  fb.rect(rx - Math.floor(rw / 2), top, rw, H, pal.light);
-  fb.vline(rx - Math.floor(rw / 2), top, H, shade(pal.light, -0.25));
-  fb.vline(rx + Math.floor(rw / 2) - 1, top, H, shade(pal.light, -0.35));
-  // nez
-  for (let i = 0; i < 6; i++) {
-    const nw = Math.max(1, rw - Math.round(i * 1.2));
-    fb.rect(rx - Math.floor(nw / 2), top - 6 + i, nw, 1, pal.accent);
+  const rl = rx - Math.floor(rw / 2);
+  // vapeur d'oxygène au pied de la fusée (tramée, animée par la variante)
+  for (let i = 0; i < 7; i++) {
+    const sx = rl - 4 + i * 3 + (variant % 3);
+    fb.px(sx, by - 1 - ((i + variant) % 2), rgba(214, 236, 255, 90));
+    fb.px(sx + 1, by - 2 - (i % 2), rgba(214, 236, 255, 55));
   }
-  fb.rect(rx - 2, top + 7, 4, 4, mixColor(pal.win, 0x0d1a30, 0.2));
-  fb.outline(rx - 2, top + 7, 4, 4, pal.dark);
-  fb.rect(rx - Math.floor(rw / 2) + 1, top + 14, rw - 2, 1, pal.accent);
-  // ailerons
-  fb.rect(rx - Math.floor(rw / 2) - 3, by - 8, 3, 8, pal.accent);
-  fb.rect(rx + Math.floor(rw / 2), by - 8, 3, 8, pal.accent);
-  fb.rect(rx - Math.floor(rw / 2) - 3, by - 8, 3, 1, shade(pal.accent, 0.3));
-  fb.rect(rx + Math.floor(rw / 2), by - 8, 3, 1, shade(pal.accent, 0.3));
-  // flammes
-  const flame = 4 + (variant % 2) * 3;
-  fb.rect(rx - 2, by - 1, 5, 1, hex(0xffd166));
-  fb.rect(rx - 1, by, 3, flame, hex(0xff9f43));
-  fb.px(rx, by + flame, hex(0xffe9a0));
+  // tour de lancement (à droite)
+  const tw = rl + rw + 4;
+  fb.vline(tw + 3, top + 4, H - 4, shade(pal.dark, 0.2));
+  fb.vline(tw, top + 4, H - 4, shade(pal.dark, 0.32));
+  fb.rect(tw, by - 3, 6, 3, shade(pal.dark, 0.25));
+  for (let i = 0; i < 5; i++) {
+    const sy = top + 6 + i * Math.floor((H - 10) / 5);
+    fb.rect(tw, sy, 4, 1, shade(pal.dark, 0.18));
+  }
+  // bras d'accostage vers la fusée
+  fb.rect(tw - 4, top + 12, 4, 1, shade(pal.dark, 0.08));
+  fb.rect(tw - 4, top + 15, 4, 1, shade(pal.dark, 0.08));
+  fb.px(tw - 5, top + 12, shade(pal.dark, 0.2));
+  // corps
+  fb.rect(rl, top, rw, H, pal.light);
+  fb.vline(rl, top, H, shade(pal.light, -0.22));
+  fb.vline(rl + rw - 1, top, H, shade(pal.light, -0.34));
+  fb.hline(rl + 1, top, rw - 2, shade(pal.light, 0.3));
+  // nez (du sommet vers la base : étroit → large)
+  for (let i = 0; i < 6; i++) {
+    const nw = Math.max(2, Math.round((rw * (i + 1)) / 6));
+    const nx = rx - Math.floor(nw / 2);
+    fb.rect(nx, top - 6 + i, nw, 1, pal.accent);
+    fb.px(nx + nw - 1, top - 6 + i, shade(pal.accent, -0.3));
+    fb.px(nx, top - 6 + i, shade(pal.accent, 0.25));
+  }
+  // bandes et hublot
+  fb.rect(rl, top + 4, rw, 2, pal.accent);
+  fb.rect(rl, top + 13, rw, 1, shade(pal.accent, -0.1));
+  fb.rect(rx - 2, top + 8, 4, 4, mixColor(pal.win, 0x0d1a30, 0.2));
+  fb.outline(rx - 2, top + 8, 4, 4, pal.dark);
+  fb.px(rx - 1, top + 9, shade(pal.win, 0.3));
+  // ailerons en escalier
+  for (let i = 0; i < 4; i++) {
+    fb.rect(rl - 4 + i, by - 5 + i, 4 - i >= 1 ? 1 : 1, 1, pal.accent);
+    fb.rect(rl - 4, by - 5 + i, 1 + i, 1, pal.accent);
+    fb.rect(rl + rw + 3 - i, by - 5 + i, 1 + i, 1, shade(pal.accent, -0.2));
+  }
+  // moteur, flamme courte et halo d'allumage sur la dalle
+  fb.rect(rl + 1, by - 2, rw - 2, 2, mixColor(pal.dark, 0x2a2f45, 0.4));
+  fb.rect(rl + 1, by - 2, rw - 2, 1, shade(pal.dark, 0.15));
+  const flame = 2 + (variant % 2);
+  fb.rect(rx - 2, by, 5, 1, hex(0xffd166));
+  fb.rect(rx - 1, by + 1, 3, flame, hex(0xff9f43));
+  fb.px(rx, by + 1 + flame, hex(0xffe9a0));
+  for (let i = -6; i <= 6; i++) {
+    const dy = Math.round(2 * Math.sqrt(Math.max(0, 1 - (i / 6) ** 2)));
+    for (let j = 0; j <= dy; j++) {
+      if (((i + j) & 1)) continue;
+      fb.px(rx + i, by + 2 + j, rgba(255, 150, 70, 70));
+    }
+  }
 }
 
 function drawQuantum(ctx) {
@@ -618,27 +859,68 @@ function drawQuantum(ctx) {
       fb.rect(fx, fy, 8, 1, pal.accent);
     }
   }
-  // anneaux quantiques
-  const ringY = by - 6;
-  for (let i = 0; i < 3; i++) {
-    const r = 6 + i * 4;
-    const yy = ringY - i * 2 - (variant % 2);
-    fb.ring(cx, yy, r, i === 1 ? pal.win : pal.accent, 1);
-  }
-  // socle lumineux
+  // ── socle lumineux ──────────────────────────────────────
   fb.rect(bx + 2, groundY - 3, w - 4, 2, shade(pal.accent, 0.2));
   fb.hline(bx + 2, groundY - 1, w - 4, pal.win);
-  // particules flottantes
-  for (let i = 0; i < 5; i++) {
-    const px = bx + 3 + ((i * 7 + variant * 3) % (w - 6));
-    const py = by - 4 - ((i * 5 + variant * 2) % 12);
-    fb.px(px, py, i % 2 ? pal.win : pal.accent);
+  for (let i = 0; i < w - 6; i += 2) {
+    fb.px(bx + 3 + i, groundY - 4, rgba(176, 107, 255, 70));
+  }
+
+  // ── cœur antigravité sur le toit ────────────────────────
+  const coreY = by - 5;
+  fb.rect(cx - 5, coreY, 10, 4, shade(pal.dark, 0.1));
+  fb.rect(cx - 4, coreY + 1, 8, 3, mixColor(pal.accent, pal.win, 0.35));
+  fb.hline(cx - 3, coreY + 2, 6, pal.win);
+  fb.px(cx, coreY + 2, 0xfff3c4);
+  // anneau incliné (deux arcs de 2 px)
+  const rxr = 15, ryr = 4;
+  for (let x = -rxr; x <= rxr; x++) {
+    const t = x / rxr;
+    const y = Math.round(ryr * Math.sqrt(Math.max(0, 1 - t * t)));
+    const back = x < 0;
+    if (!back || (x & 1)) {
+      fb.px(cx + x, coreY - y - 2, back ? shade(pal.win, -0.25) : pal.win);
+      fb.px(cx + x, coreY - y - 3, rgba(208, 184, 255, 110));
+    }
+    if (back || (x & 1)) {
+      fb.px(cx + x, coreY + y + 1, back ? shade(pal.accent, -0.15) : pal.accent);
+      fb.px(cx + x, coreY + y + 2, rgba(176, 107, 255, 120));
+    }
+  }
+  // cubes flottants
+  for (let i = 0; i < 3; i++) {
+    const fx = cx - 9 + i * 9 + ((variant + i) % 2) * 2;
+    const fy = coreY - 12 - (i % 2) * 4;
+    fb.rect(fx, fy, 4, 4, mixColor(pal.light, 0xffffff, 0.25));
+    fb.hline(fx, fy, 4, pal.win);
+    fb.px(fx + 1, fy + 3, shade(pal.accent, -0.1));
+    fb.px(fx + 1, fy + 5, rgba(208, 184, 255, 90));
+    fb.px(fx + 2, fy + 7, rgba(208, 184, 255, 55));
+  }
+  roofDetails(ctx, bx + 2, by - 4, w - 4, pal, {});
+  // dalle et véhicule lévitant
+  fb.rect(bx - 4, groundY - 2, w + 8, 1, pal.accent);
+  fb.rect(bx - 4, groundY - 1, w + 8, 1, shade(pal.accent, -0.35));
+  const vx = bx - 11;
+  fb.rect(vx, groundY - 7, 9, 3, mixColor(pal.light, 0xffffff, 0.4));
+  fb.hline(vx, groundY - 7, 9, pal.win);
+  fb.rect(vx + 1, groundY - 10, 4, 3, mixColor(pal.win, 0x2a1e4a, 0.45));
+  fb.px(vx + 5, groundY - 8, pal.win);
+  for (let i = 0; i < 7; i++) {
+    if (i & 1) continue;
+    fb.px(vx + i, groundY - 3, rgba(176, 107, 255, 90));
+    fb.px(vx + i, groundY - 2, rgba(176, 107, 255, 45));
   }
 }
 
 // ── Décor : nature et mobilier urbain ────────────────────────
 
 export function drawNature(kind, variant = 0, seed = 1) {
+  const fb = drawNatureRaw(kind, variant, seed);
+  return outlineSilhouette(fb, 0x0a0e1c);
+}
+
+function drawNatureRaw(kind, variant = 0, seed = 1) {
   const rnd = mulberry32(seed);
   switch (kind) {
     case 'tree': {
@@ -734,6 +1016,80 @@ export function drawNature(kind, variant = 0, seed = 1) {
       fb.rect(0, 1, 10, 6, hex(0x2f7a35));
       fb.outline(0, 1, 10, 6, hex(0x215a27));
       fb.rect(2, 3, 6, 2, hex(0xe8f4d8));
+      return fb;
+    }
+    case 'birch': {
+      const fb = new FB(12, 20);
+      fb.rect(5, 8, 2, 10, hex(0xd8d2c0));
+      for (let i = 0; i < 4; i++) fb.rect(5, 9 + i * 2, i % 2 ? 1 : 2, 1, hex(0x4a4438));
+      fb.disk(6, 7, 5, hex(0x4f9c45));
+      fb.disk(5, 6, 4, hex(0x67bb55));
+      fb.disk(8, 8, 3, hex(0x2f7a35));
+      fb.px(4, 5, hex(0xd8f07a));
+      return fb;
+    }
+    case 'hydrant': {
+      const fb = new FB(7, 11);
+      fb.rect(2, 3, 3, 7, hex(0xd0504c));
+      fb.rect(2, 3, 3, 1, hex(0xf07a72));
+      fb.rect(1, 5, 1, 2, hex(0xd0504c));
+      fb.rect(5, 5, 1, 2, hex(0xd0504c));
+      fb.rect(3, 1, 1, 2, hex(0xd0504c));
+      fb.rect(1, 10, 5, 1, hex(0x8a3b38));
+      return fb;
+    }
+    case 'mailbox': {
+      const fb = new FB(9, 13);
+      fb.rect(4, 7, 1, 6, hex(0x555b64));
+      fb.rect(1, 3, 7, 4, hex(0x2f4a6b));
+      fb.rect(1, 3, 7, 1, hex(0x486c96));
+      fb.rect(2, 4, 5, 2, hex(0xffe9a0));
+      fb.rect(1, 7, 7, 1, hex(0x1d3049));
+      return fb;
+    }
+    case 'bin': {
+      const fb = new FB(8, 10);
+      fb.rect(1, 3, 6, 6, hex(0x3d4a3a));
+      fb.rect(0, 2, 8, 2, hex(0x55604f));
+      fb.rect(1, 4, 6, 1, hex(0x2b332a));
+      fb.rect(2, 6, 2, 1, hex(0x55604f));
+      return fb;
+    }
+    case 'busstop': {
+      const fb = new FB(20, 20);
+      fb.rect(1, 4, 1, 15, hex(0x555b64));
+      fb.rect(17, 4, 1, 15, hex(0x555b64));
+      fb.rect(0, 2, 20, 3, hex(0x3aa7a0));
+      fb.rect(0, 2, 20, 1, hex(0x6dd6cf));
+      fb.rect(2, 8, 15, 1, hex(0x8a8f96));
+      fb.rect(2, 15, 15, 2, hex(0x8a5a30));
+      fb.rect(3, 17, 2, 2, hex(0x4a3a22));
+      fb.rect(14, 17, 2, 2, hex(0x4a3a22));
+      fb.rect(5, 5, 8, 3, hex(0xffe9a0));
+      return fb;
+    }
+    case 'traffic': {
+      const fb = new FB(8, 22);
+      fb.rect(3, 8, 2, 14, hex(0x3a3f48));
+      fb.rect(2, 1, 4, 8, hex(0x2b2f36));
+      fb.outline(2, 1, 4, 8, hex(0x15181d));
+      fb.px(4, 3, hex(0xff4d6d));
+      fb.px(4, 5, hex(0xffd166));
+      fb.px(4, 7, hex(0x6bc47a));
+      fb.rect(1, 20, 6, 2, hex(0x22252b));
+      return fb;
+    }
+    case 'stall': {
+      const fb = new FB(22, 18);
+      fb.rect(0, 6, 22, 2, hex(0x8a5a30));
+      fb.rect(0, 8, 22, 8, hex(0x6b4a2a));
+      for (let i = 0; i < 22; i += 3) fb.px(i, 12, hex(0x4a3a22));
+      for (let i = 0; i < 22; i += 3) {
+        const c = (i / 3) % 2 ? hex(0xd0504c) : hex(0xf7f2e0);
+        fb.rect(i, 2, 3, 4, c);
+      }
+      fb.rect(0, 2, 22, 1, hex(0xe8e4d8));
+      for (let i = 0; i < 3; i++) fb.rect(3 + i * 7, 5, 3, 2, i === 1 ? hex(0xffd166) : hex(0xd0504c));
       return fb;
     }
     default: return new FB(4, 4);
