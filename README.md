@@ -1,1 +1,180 @@
-# PixCity
+# 🏙️ PixCity
+
+**Un idle city-builder pixel-art, complet et jouable dans le navigateur.**
+Tu tapes, tu construis, ta ville produit en continu — et ça devient vite incontrôlable
+(dans le bon sens du terme).
+
+> ⚠️ **Les achats in-game sont SIMULÉS.**
+> Le bouton « Payer » joue tout le tunnel d'un vrai achat (connexion, commande, paiement,
+> reçu, validation) et affiche « ACHAT VALIDÉ », mais **rien n'est débité**, aucune donnée
+> bancaire n'est demandée et rien ne quitte ton appareil. C'est une démo gratuite.
+
+---
+
+## 🚀 Lancer le jeu
+
+```bash
+npm start          # → http://localhost:5173
+```
+
+Aucune dépendance à installer : c'est du HTML/CSS/JS natif (ES modules).
+N'importe quel serveur statique fait l'affaire :
+
+```bash
+python3 -m http.server 5173
+```
+
+### Autres commandes
+
+| Commande | Effet |
+|---|---|
+| `npm start` | Serveur de dev (zéro dépendance, `0.0.0.0:5173`) |
+| `npm test` | **143 tests** : économie, sauvegarde, achat simulé, UI, démarrage réel |
+| `npm run preview` | Rend le pixel-art en PNG (bâtiments, décors) |
+| `node tools/city.mjs all` | Rend la scène complète à 3 stades de jeu (PNG) |
+| `node tools/icons.mjs` | Régénère les icônes PWA |
+
+---
+
+## 🎮 Le jeu
+
+**Boucle principale :** tape la ville → pièces → bâtiments → revenus/seconde → nouveaux
+bâtiments → **prestige** → étoiles permanentes → on recommence, plus vite, plus fort.
+
+| Système | Détail |
+|---|---|
+| 👆 **Tap & combo** | Chaque tap rapporte une base **+ 5 % des revenus/s**. En tapant vite, le combo monte jusqu'à **×3** (×8 avec l'amélioration « Fièvre du tap »). |
+| 🏗️ **12 bâtiments** | De la Cabane au **Quartier Quantique**. Prix ×1,115 par unité, achats ×1 / ×10 / ×100 / **MAX**. |
+| 🎚️ **Paliers** | Tous les **25** bâtiments : production **×2** et visuel qui évolue (jusqu'à des gratte-ciel). |
+| 💰 **Bonus à collecter** | Des bulles apparaissent au-dessus des bâtiments : pièces, gemmes 💎, ou boost de production. |
+| 🚕 **Taxi doré** | Traverse la ville de temps en temps : pièces, gemmes ou **×7 pendant 100 s**. |
+| 💎 **Bonus permanents** | 6 améliorations à niveaux + 6 améliorations uniques (veilleuse hors-ligne, robots tapoteurs, skin néon…). |
+| 📋 **Quêtes** | 15 quêtes principales + **3 défis du jour** régénérés chaque jour + série de jours. |
+| 🏆 **25 succès** | Récompensés automatiquement en gemmes. |
+| 🌙 **Hors-ligne** | La ville produit pendant ton absence (plafond 2 h → 24 h avec la Veilleuse). |
+| 🌟 **Prestige** | +10 % de production par étoile, pour toujours. |
+| 🕐 **Cycle jour/nuit** | 7 minutes : aube, jour, crépuscule, nuit étoilée. |
+| 🔊 **Son & musique** | 100 % synthétisés en WebAudio (aucun fichier audio). |
+
+### Tout est dessiné « à la main », en code
+
+Aucun sprite externe : chaque bâtiment est **procédural** (recette pixel-art → framebuffer →
+canvas). Le même code de dessin tourne dans le navigateur *et* en Node, ce qui permet de
+générer des PNG de contrôle sans navigateur.
+
+```
+src/gfx/fb.js        framebuffer Uint32RGB, primitives + encodeur PNG
+src/gfx/sprites.js   recettes des 12 bâtiments + décors (arbres, lampadaires, bancs…)
+src/gfx/city.js      la scène : ciel, collines, routes, parcelles, passants, effets
+src/gfx/surface.js   abstraction canvas/framebuffer (même code de rendu partout)
+```
+
+---
+
+## 🛒 La boutique (achats simulés)
+
+Packs disponibles (aucun n'est payant en démo) :
+
+| Pack | Prix fictif | Contenu |
+|---|---|---|
+| 🎁 Pack Fondateur | 2,99 € | 400 💎 + production ×2 + skin Néon + badge |
+| 💎 Poignée / Sac / Coffre / Banque de gemmes | 4,99 → 49,99 € | 500 → 11 000 gemmes |
+| 👑 Pass VIP | 9,99 € | ×2 permanent, +250 💎/jour, badge |
+| 🧘 Pack Zen | 3,99 € | Supprime les offres flash, pubs ×2 |
+
+Il y a aussi des **offres flash** (-40 / -60 %, avec compte à rebours) et une **pub
+récompensée simulée** (5 s → +25 💎, toutes les 2 min).
+
+### Comment ça marche
+
+Tout est local, dans `src/app/backend.js` : `connect()` → `createOrder()` → `pay()` →
+`validate()` → reçu sauvegardé dans le navigateur. Latences simulées, écran de reçu,
+historique consultable (**touche `R`**).
+
+**Pour passer en production**, il faut remplacer ces méthodes par de vrais appels serveur
+(Stripe, Google Play Billing, App Store) **et valider les reçus côté serveur** — la
+validation doit toujours être faite par le serveur, jamais par le client.
+
+---
+
+## 🗂️ Architecture
+
+```
+index.html            écran unique : boot, scène, HUD, panneaux, modales
+styles/
+  base.css            kit d'UI pixel-art (boutons, panneaux, modales, toasts)
+  game.css            écrans de jeu (HUD, dock, boutique, tunnel de paiement…)
+src/
+  core/               moteur pur, sans DOM (testable en Node)
+    data.js           tous les chiffres du jeu (bâtiments, packs, défis)
+    economy.js        coûts, production, multiplicateurs, prestige
+    state.js          état sérialisable + migration de sauvegarde
+    save.js           sauvegarde locale, export/import, gains hors-ligne
+    quests.js         quêtes principales, défis du jour, série
+    achievements.js   25 succès
+    iap.js            définition des packs + effets (paiement = simulé)
+    audio.js          SFX & musique WebAudio
+    bus.js, format.js utilitaires
+  gfx/                moteur pixel-art (voir plus haut)
+  ui/                 interface : hud, panels, modales, tunnel de paiement, tutoriel
+  app/
+    game.js           orchestrateur : boucle, caméra, actions, sauvegarde auto
+    backend.js        « boutique » simulée
+    main.js           point d'entrée, entrées tactiles/clavier
+tools/
+  serve.mjs           serveur statique de dev
+  test.mjs            143 tests (économie, UI, achat simulé, démarrage réel)
+  domstub.mjs         DOM minimal pour tester le jeu sans navigateur
+  preview.mjs/city.mjs/icons.mjs   générateurs d'images de contrôle
+```
+
+### Sauvegarde
+
+Locale (`localStorage`, clé `pixcity.save.v1`), autosave toutes les 8 s et à chaque achat.
+Export/import en base64 dans **⚙️ → Sauvegarde**. Si le stockage est indisponible
+(iframe restreinte), le jeu bascule automatiquement sur une sauvegarde en mémoire.
+
+---
+
+## 🎛️ Contrôles
+
+| Action | Tactile | Clavier |
+|---|---|---|
+| Taper / gagner | 1 doigt | `Espace` |
+| Se déplacer | glisser | glisser |
+| Bâtir / Bonus / Boutique | dock | `B` / `U` / `S` |
+| Quêtes / Succès | dock | `Q` / `A` |
+| Prestige | dock 🌟 | `P` |
+| Fermer un panneau | taper la ville | `Échap` |
+| Historique d'achats | — | `R` |
+
+---
+
+## 📈 Équilibrage (mesuré par les tests)
+
+Simulation d'un joueur actif (1,3 tap/s au début, achats optimisés) :
+
+| Bâtiment | Débloqué à |
+|---|---|
+| 🛖 Cabane | immédiat |
+| 🏪 Épicerie | 1 min |
+| ☕ Café | 5 min |
+| 🏢 Immeuble | 14 min |
+| 🎬 Cinéma | 26 min |
+| 🏬 Centre Commercial | 43 min |
+| 🏥 Hôpital | 1 h 05 |
+| 🏙️ Tour de Bureaux | 1 h 32 |
+| 🌆 Gratte-ciel | 2 h 07 |
+| 🎡 Parc d'Attractions | 2 h 50 |
+| 🚀 Gare Spatiale / 🔮 Quartier Quantique | plusieurs sessions + prestiges |
+
+---
+
+## 💡 Notes
+
+- Jeu **hors-ligne d'abord** : aucun compte, aucun serveur, aucune télémétrie.
+- Le filtre CRT, les particules et les secousses sont désactivables (⚙️).
+- Installable en PWA (manifest + service worker), jouable en plein écran sur mobile.
+- Sauvegarde automatique : tu peux fermer l'onglet, ta ville continue de produire.
+
+Fait à la main, pixels compris 💛
